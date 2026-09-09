@@ -1,0 +1,75 @@
+{
+  // Copy to devctl.config.json and adapt. `$schema` support depends on your editor.
+  "reposRoot": "~/dev",
+  "herdr": {
+    "enabled": true,
+    "workspace": "servers"
+  },
+  "envBaseFiles": {
+    "local": ".env.development",
+    "test": ".env.test",
+    "prod": ".env.production"
+  },
+  "debug": {
+    "enabled": false,
+    "command": "pi --provider my-provider --model my-model -p --no-session --tools read,bash"
+  },
+  "services": {
+    "mongo": {
+      "repo": "infra",
+      "basePort": 27017,
+      "shared": true,
+      "command": "docker compose -f docker-compose.yml up -d mongo1 mongo2 mongo3 mongo-setup",
+      "stopCommand": "docker compose -f docker-compose.yml stop mongo-setup mongo3 mongo2 mongo1",
+      "healthTimeoutMs": 90000
+    },
+    "api": {
+      "repo": "api",
+      "basePort": 3000,
+      "inspectBasePort": 9231,
+      "command": "./node_modules/.bin/nodemon --exec 'node --inspect=${inspectPort} src/server.ts'",
+      "env": {
+        "NODE_ENV": "development",
+        "PUBLIC_SERVER_URL": "http://localhost:${port}"
+      },
+      "install": "pnpm install",
+      "dependsOn": ["mongo"],
+      "provides": {
+        "url": "http://localhost:${port}/api"
+      },
+      "remoteProvides": {
+        "url": { "from": "web", "envKey": "API_URL" }
+      },
+      "envExternals": {
+        "test": { "EXT_BASE_URL": "https://test.example.com" },
+        "prod": { "EXT_BASE_URL": "https://example.com" }
+      },
+      "healthTimeoutMs": 120000
+    },
+    "web": {
+      "repo": "web",
+      "basePort": 3100,
+      "command": "./node_modules/.bin/next dev -p ${port}",
+      "env": { "NODE_OPTIONS": "--max-old-space-size=4096" },
+      "healthTimeoutMs": 150000,
+      "wiring": {
+        "API_URL": "api.url"
+      },
+      "overlayManagedKeys": ["API_URL"]
+    },
+    "admin": {
+      "repo": "admin",
+      "basePort": 4000,
+      "command": "./node_modules/.bin/next dev -p ${port}",
+      "healthTimeoutMs": 150000,
+      "wiring": { "API_URL": "api.url" },
+      "overlayManagedKeys": ["API_URL"]
+    },
+    "studio": {
+      "repo": "studio",
+      "basePort": 6006,
+      "command": "./node_modules/.bin/storybook dev -p ${port}",
+      "healthTimeoutMs": 300000
+    }
+  }
+}
