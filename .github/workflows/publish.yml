@@ -1,0 +1,22 @@
+name: Publish Raycast Extension
+
+on:
+  push:
+    branches: [main]
+    paths: ["raycast/**"]
+  pull_request:
+    paths: ["raycast/**"]
+
+jobs:
+  build_publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: raycast/github-actions/setup-cli@v1.18.0
+        with:
+          version: 1.104.6
+      - uses: raycast/github-actions/ray-cli@v1.18.0
+        with:
+          paths: raycast
+          command: ${{ github.event_name == 'pull_request' && 'build' || 'publish' }}
+          access_token: ${{ secrets.RAYCAST_ORGANIZATION_TOKEN }}

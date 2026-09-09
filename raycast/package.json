@@ -6,6 +6,8 @@
   "description": "Orchestrate local dev worktrees from the menu bar",
   "icon": "icon.png",
   "author": "sami",
+  "owner": "sam1.space",
+  "version": "1.0.0",
   "categories": ["Developer Tools"],
   "preferences": [
     {
