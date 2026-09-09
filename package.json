@@ -1,0 +1,26 @@
+{
+  "name": "devctl",
+  "version": "0.2.0",
+  "description": "Stack-first local orchestration for git worktrees, wired by a dependency graph",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "author": "Sami",
+  "engines": {
+    "node": ">=20"
+  },
+  "bin": {
+    "devctl": "./bin/devctl"
+  },
+  "scripts": {
+    "devctl": "./bin/devctl",
+    "doctor": "./bin/devctl doctor",
+    "test": "tsx src/graph.test.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^26",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  }
+}

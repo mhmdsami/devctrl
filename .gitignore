@@ -1,0 +1,7 @@
+node_modules/
+dist/
+raycast/node_modules/
+raycast/dist/
+devctl.config.json
+.DS_Store
+*.log
