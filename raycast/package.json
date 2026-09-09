@@ -5,9 +5,9 @@
   "title": "Devctl",
   "description": "Orchestrate local dev worktrees from the menu bar",
   "icon": "icon.png",
-  "author": "sami",
+  "author": "sm-sami",
   "owner": "sam1.space",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "categories": ["Developer Tools"],
   "preferences": [
     {
