@@ -1,0 +1,66 @@
+{
+  "$schema": "https://www.raycast.com/schemas/extension.json",
+  "name": "devctl",
+  "license": "MIT",
+  "title": "Devctl",
+  "description": "Orchestrate local dev worktrees from the menu bar",
+  "icon": "icon.png",
+  "author": "sami",
+  "categories": ["Developer Tools"],
+  "preferences": [
+    {
+      "name": "devctlPath",
+      "title": "devctl Path",
+      "description": "Absolute path to the devctl executable.",
+      "type": "textfield",
+      "required": true,
+      "default": "/opt/homebrew/bin/devctl"
+    },
+    {
+      "name": "editorApp",
+      "title": "Editor App",
+      "description": "App name used by Open in Editor (passed to open -a).",
+      "type": "textfield",
+      "required": false,
+      "default": "Zed"
+    }
+  ],
+  "commands": [
+    {
+      "name": "menubar",
+      "title": "Dev Stacks",
+      "description": "devctl stacks and actions in the menu bar",
+      "mode": "menu-bar"
+    },
+    {
+      "name": "manage",
+      "title": "Manage Stack",
+      "description": "Start, stop, delete stacks, with member and running details",
+      "mode": "view"
+    },
+    {
+      "name": "create-stack",
+      "title": "Create Stack",
+      "description": "Create worktrees/branches and pin a new stack",
+      "mode": "view"
+    },
+    {
+      "name": "switch-env",
+      "title": "Switch Environment",
+      "description": "Switch external services between test and prod",
+      "mode": "view"
+    }
+  ],
+  "dependencies": {
+    "@raycast/api": "^1.104.25"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.18",
+    "typescript": "^5.6.0"
+  },
+  "scripts": {
+    "build": "ray build -e dist",
+    "dev": "ray develop",
+    "lint": "ray lint"
+  }
+}
