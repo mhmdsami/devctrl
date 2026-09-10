@@ -19,8 +19,14 @@ export default function Menubar() {
   const rows = (stacks?.stacks ?? []).map((stack) => stackView(stack, status))
   const failed = rows.filter((row) => row.state === 'failed').length
   const starting = rows.filter((row) => row.state === 'starting').length
-  const active = rows.filter((row) => row.running).length
-  const title = failed ? `!${failed}` : starting ? `…${starting}` : active ? String(active) : undefined
+  const active = rows.filter((row) => row.state === 'ready' || row.state === 'external').length
+  const title = failed
+    ? `${failed} failed`
+    : starting
+      ? `${starting} starting`
+      : active
+        ? String(active)
+        : undefined
   const icon = failed
     ? { source: Icon.Terminal, tintColor: '#ff3b30' }
     : starting
