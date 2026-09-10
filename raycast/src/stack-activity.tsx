@@ -15,7 +15,7 @@ interface Props {
 
 export function StackActivity({ name, action }: Props) {
   const { stacks, error: stacksError } = useStacks()
-  const { status, error: statusError, isLoading } = useDevctlStatus(1_000)
+  const { status, error: statusError, isLoading } = useDevctlStatus(2_000)
   const { push } = useNavigation()
   const started = useRef(false)
   const [commandState, setCommandState] = useState<'running' | 'complete' | 'failed'>(action === 'view' ? 'complete' : 'running')

@@ -18,8 +18,11 @@ export function usePollingValue<T>(load: () => Promise<T>, { intervalMs }: Polli
 
   useEffect(() => {
     let cancelled = false
+    let inFlight = false
 
     const refresh = async () => {
+      if (inFlight) return
+      inFlight = true
       try {
         const next = await load()
         if (cancelled) return
@@ -28,6 +31,8 @@ export function usePollingValue<T>(load: () => Promise<T>, { intervalMs }: Polli
       } catch (cause) {
         if (cancelled) return
         setError(cause instanceof Error ? cause : new Error(String(cause)))
+      } finally {
+        inFlight = false
       }
     }
 

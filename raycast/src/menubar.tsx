@@ -14,8 +14,8 @@ const stateIcon = (state: ServiceState | 'external') => {
 }
 
 export default function Menubar() {
-  const { status, error: statusError, isLoading, reload: reloadStatus } = useDevctlStatus(2_000)
-  const { stacks, error: stacksError, reload: reloadStacks } = useStacks(5_000)
+  const { status, error: statusError, isLoading, reload: reloadStatus } = useDevctlStatus(5_000)
+  const { stacks, error: stacksError, reload: reloadStacks } = useStacks(15_000)
   const rows = (stacks?.stacks ?? []).map((stack) => stackView(stack, status))
   const failed = rows.filter((row) => row.state === 'failed').length
   const starting = rows.filter((row) => row.state === 'starting').length
