@@ -1,5 +1,6 @@
 import fs from 'fs'
 import path from 'path'
+import { execFileSync } from 'child_process'
 
 export type TEnvMap = Record<string, string>
 
@@ -37,10 +38,27 @@ function writeAtomic(file: string, content: string): void {
   fs.renameSync(tmp, file)
 }
 
+function rootIgnoredFiles(repoPath: string): string[] {
+  try {
+    const out = execFileSync(
+      'git',
+      ['-C', repoPath, 'ls-files', '--others', '--ignored', '--exclude-standard', '--full-name'],
+      { encoding: 'utf8' },
+    )
+    return out.split('\n').filter((line) => line && !line.includes('/'))
+  } catch {
+    return []
+  }
+}
+
 export function seedEnvFiles(worktreePath: string, mainRepoPath: string): string[] {
   const seeded: string[] = []
-  for (const name of fs.readdirSync(mainRepoPath)) {
-    if (!name.startsWith('.env')) continue
+  const candidates = new Set([
+    ...fs.readdirSync(mainRepoPath).filter((name) => name.startsWith('.env')),
+    ...rootIgnoredFiles(mainRepoPath),
+  ])
+  for (const name of candidates) {
+    if (name.includes('/')) continue
     const target = path.join(worktreePath, name)
     if (fs.existsSync(target)) continue
     fs.copyFileSync(path.join(mainRepoPath, name), target)

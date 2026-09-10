@@ -5,6 +5,7 @@ process.env.PATH = [...PATH_DIRS, ...pathEntries.filter((d) => !PATH_DIRS.includ
 import { closeWorkspaceByLabel, findRefByLabel, focusTab, focusWorkspace, refAlive, refExited, refOutput, requireRunner, rerunIn, start, stopRef, sweepDevctlTabs } from './session'
 import { killTree, pidsListeningOnPort, tcpAlive } from './process'
 import { loadConfig, repoDir, resolveConfigPath } from './config'
+import { seedEnvFiles } from './envfile'
 import { createWorktree, isShared, repoKeys as repoKeysFromRegistry, entryKey, findWorktree, listAllWorktrees, listWorktrees, parseTarget, resolveCwdTarget, type TRepoKey } from './registry'
 import { loadState, saveState, STATE_FILE, type TStackState, type TDevctlState } from './state'
 import { depsOf, dependentsOf, hasWiring, planStack, providersOf, type TStackPlan } from './stacks'
@@ -66,7 +67,9 @@ function detectInstall(cwd: string): string | null {
 }
 
 function ensureDeps(key: string, repo: TRepoKey, wt: { path: string }): void {
-  if (isShared(repo) || fs.existsSync(path.join(wt.path, 'node_modules'))) return
+  if (isShared(repo)) return
+  seedEnvFiles(wt.path, repoDir(repo))
+  if (fs.existsSync(path.join(wt.path, 'node_modules', '.bin'))) return
   const cmd = loadConfig().services[repo]?.install ?? detectInstall(wt.path)
   if (!cmd) return
   out(colors.yellow(`~ ${key}: node_modules missing - running ${cmd}`))

@@ -126,7 +126,7 @@ one `wiring` line. Cycles are rejected at config load.
 
 - dependents get a `.env.local` overlay built from the mode's base env file, pointing at
   their targets; managed values are force-exported in the pane
-- worktrees missing gitignored env files are seeded from the repo's current HEAD on `up`
+- worktrees missing gitignored env files are seeded from the repo's current HEAD on `up`; the same applies to other gitignored root-level files (`.npmrc`, `.yarnrc.yml`, ...) so installs authenticate in fresh worktrees
 - a worktree without `node_modules` gets dependencies installed before start (detected
   from the lockfile, or the service's `install` command)
 - a failed start fails fast: the entry is cleaned up and, if `debug` is enabled, an
