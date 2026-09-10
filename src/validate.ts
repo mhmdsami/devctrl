@@ -33,6 +33,12 @@ export function validateConfig(cfg: unknown): TDevctlConfig {
     if (d.command !== undefined && (typeof d.command !== 'string' || !d.command.trim())) {
       throw new ConfigError('debug.command', 'expected non-empty string when set')
     }
+    if (d.provider !== undefined && (typeof d.provider !== 'string' || !d.provider.trim())) {
+      throw new ConfigError('debug.provider', 'expected non-empty string when set')
+    }
+    if (d.model !== undefined && (typeof d.model !== 'string' || !d.model.trim())) {
+      throw new ConfigError('debug.model', 'expected non-empty string when set')
+    }
   }
   requireObject(c, 'services')
   const services = c.services as Record<string, unknown>

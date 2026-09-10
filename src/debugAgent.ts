@@ -3,12 +3,16 @@ import { loadConfig } from './config'
 import { shQuote } from './process'
 import { colors, quiet } from './util'
 
-const DEFAULT_COMMAND = 'pi --provider opencode-go --model omen-alpha -p --no-session --tools read,bash'
+const DEFAULT_PROVIDER = 'opencode-go'
+const DEFAULT_MODEL = 'omen-alpha'
 
 export function debugCommand(): string | null {
   const dbg = loadConfig().debug
   if (!dbg?.enabled) return null
-  return dbg.command?.trim() || DEFAULT_COMMAND
+  if (dbg.command?.trim()) return dbg.command.trim()
+  const provider = dbg.provider?.trim() || DEFAULT_PROVIDER
+  const model = dbg.model?.trim() || DEFAULT_MODEL
+  return `pi --provider ${provider} --model ${model} -p --no-session --tools read,bash`
 }
 const runExclusive = (() => {
   let chain: Promise<void> = Promise.resolve()

@@ -31,6 +31,8 @@ export interface TServiceConfig {
 export interface TDebugConfig {
   enabled?: boolean
   command?: string
+  provider?: string
+  model?: string
 }
 
 export interface TDevctlConfig {

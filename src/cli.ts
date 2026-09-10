@@ -5,6 +5,7 @@ process.env.PATH = [...PATH_DIRS, ...pathEntries.filter((d) => !PATH_DIRS.includ
 import { closeWorkspaceByLabel, findRefByLabel, focusTab, focusWorkspace, refAlive, refExited, refOutput, requireRunner, rerunIn, start, stopRef, sweepDevctlTabs } from './session'
 import { killTree, pidsListeningOnPort, tcpAlive } from './process'
 import { loadConfig, repoDir, resolveConfigPath } from './config'
+import { validateConfig } from './validate'
 import { createWorktree, isShared, repoKeys as repoKeysFromRegistry, entryKey, findWorktree, listAllWorktrees, listWorktrees, parseTarget, resolveCwdTarget, type TRepoKey } from './registry'
 import { seedEnvFiles } from './envfile'
 import { loadState, saveState, STATE_FILE, type TStackState, type TDevctlState } from './state'
@@ -798,12 +799,65 @@ function redact(value: unknown): unknown {
   return value
 }
 
+function configPathGet(obj: unknown, dotted: string): unknown {
+  let cur: unknown = obj
+  for (const part of dotted.split('.')) {
+    if (typeof cur !== 'object' || cur === null || Array.isArray(cur)) return undefined
+    cur = (cur as Record<string, unknown>)[part]
+  }
+  return cur
+}
+
+function configPathSet(obj: Record<string, unknown>, dotted: string, value: unknown): void {
+  const parts = dotted.split('.')
+  let cur: Record<string, unknown> = obj
+  for (const part of parts.slice(0, -1)) {
+    const next = cur[part]
+    if (typeof next !== 'object' || next === null || Array.isArray(next)) {
+      cur[part] = {}
+    }
+    cur = cur[part] as Record<string, unknown>
+  }
+  cur[parts[parts.length - 1]] = value
+}
+
 function cmdConfig(a: TArgs): void {
   const sub = a.positionals[0]
-  if (sub !== 'show') throw new UsageError('usage: devctl config show [--json]')
-  const redacted = redact(loadConfig())
-  if (flag(a, 'json')) console.log(JSON.stringify(redacted, null, 2))
-  else console.log(`# ${resolveConfigPath()} (secrets redacted)\n${JSON.stringify(redacted, null, 2)}`)
+  const file = resolveConfigPath()
+  if (sub === 'show') {
+    const redacted = redact(loadConfig())
+    if (flag(a, 'json')) console.log(JSON.stringify(redacted, null, 2))
+    else console.log(`# ${file} (secrets redacted)\n${JSON.stringify(redacted, null, 2)}`)
+    return
+  }
+  if (sub === 'get') {
+    const dotted = a.positionals[1]
+    if (!dotted) throw new UsageError('usage: devctl config get <path>')
+    const value = configPathGet(JSON.parse(fs.readFileSync(file, 'utf8')), dotted)
+    if (value === undefined) throw new Error(`${dotted} is not set`)
+    console.log(typeof value === 'string' ? value : JSON.stringify(value, null, 2))
+    return
+  }
+  if (sub === 'set') {
+    const dotted = a.positionals[1]
+    const raw = a.positionals[2]
+    if (!dotted || raw === undefined) throw new UsageError('usage: devctl config set <path> <value>')
+    const parsed = JSON.parse(fs.readFileSync(file, 'utf8')) as Record<string, unknown>
+    let value: unknown = raw
+    try {
+      value = JSON.parse(raw)
+    } catch {
+      value = raw
+    }
+    configPathSet(parsed, dotted, value)
+    validateConfig(parsed)
+    const tmp = `${file}.devctl-tmp`
+    fs.writeFileSync(tmp, `${JSON.stringify(parsed, null, 2)}\n`)
+    fs.renameSync(tmp, file)
+    out(`set ${dotted}${typeof value === 'string' ? ` = ${value}` : ''}`)
+    return
+  }
+  throw new UsageError('usage: devctl config show [--json] | config get <path> | config set <path> <value>')
 }
 
 function cmdContext(a: TArgs): void {
