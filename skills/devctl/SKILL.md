@@ -63,9 +63,12 @@ Both restart running services. Confirm intent first. Stack member overrides win 
 devctl doctor [--json]    # config, binaries, ports, env files, stale state, branch conflicts
 devctl config show        # resolved config, secrets redacted
 devctl context [stack]    # markdown status of a stack - paste into the conversation when the user asks about their stack
+devctl diagnose <service>/<worktree>   # debug agent reads recent logs and prints ROOT CAUSE / FIX
 ```
 
-If a service won't start, check `doctor` and that service's logs before guessing.
+If a service won't start, check `doctor` and that service's logs before guessing. For app-level
+failures (process healthy, page broken), `devctl diagnose <service>/<worktree>` hands the logs to
+the debug agent. The agent model is set with `devctl config set debug.model <name>`.
 
 ## Adding a service (config)
 

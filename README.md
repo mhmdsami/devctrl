@@ -21,7 +21,10 @@ devctl env test|prod [--force] [--json]
 devctl use <service> <worktree|test|prod> [--force] [--json]
 devctl logs <service>/<worktree> [--lines N] [--follow]
 devctl config show [--json]              # resolved config, secrets redacted
+devctl config get <path>                 # read one value, e.g. debug.model
+devctl config set <path> <value>         # write one value; validated before saving
 devctl context [stack]                   # markdown status of a stack, for agents
+devctl diagnose <service>/<worktree>     # hand a service's recent logs to the debug agent
 devctl doctor [--json]                   # config, binaries, ports, env files, stale state, branch conflicts
 devctl attach [workspace]
 devctl completion bash|zsh
@@ -78,7 +81,9 @@ one `wiring` line. Cycles are rejected at config load.
   "herdr": { "enabled": true, "workspace": "servers" },   // set enabled:false to run plain detached processes
   "debug": {                                             // optional: on start failure, hand the logs to an agent
     "enabled": true,                                     // skipped in --quiet/--json runs
-    "command": "pi --provider opencode-go --model omen-alpha -p --no-session --tools read,bash"
+    "provider": "opencode-go",                           // model selection lives here, or set "command" outright
+    "model": "omen-alpha",
+    "command": "pi --provider opencode-go --model omen-alpha -p --no-session"
   },
   "envBaseFiles": { "local": ".env.development", "test": ".env.test", "prod": ".env.production" },
   "services": {
@@ -131,6 +136,9 @@ one `wiring` line. Cycles are rejected at config load.
   from the lockfile, or the service's `install` command)
 - a failed start fails fast: the entry is cleaned up and, if `debug` is enabled, an
   agent diagnoses the log output
+- `devctl diagnose <service>/<worktree>` runs that agent on demand (running, failed, or
+  stopped) and prints ROOT CAUSE / FIX; the Raycast panel and menubar expose it for
+  running and failed services
 - `devctl use <service> <target>` retargets every service that depends on it; stack
   member overrides still win
 
