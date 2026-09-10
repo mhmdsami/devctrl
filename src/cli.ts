@@ -15,7 +15,7 @@ import { alias as portlessAlias, dnsName as portlessDnsName, portlessAvailable, 
 import { sleep, colors, setQuiet, out, quiet, setColorEnabled } from './util'
 import { parseArgs, flag, opt, positional, type TArgs, UsageError } from './args'
 import { tailFile } from './logtail'
-import { debugFailure } from './debugAgent'
+import { debugFailure, runDiagnosis } from './debugAgent'
 import fs from 'fs'
 import path from 'path'
 import readline from 'node:readline/promises'
@@ -665,6 +665,29 @@ function cmdLogs(a: TArgs): void {
   })
 }
 
+async function cmdDiagnose(a: TArgs): Promise<void> {
+  const json = flag(a, 'json')
+  if (json) setQuiet(true)
+  const target = a.positionals[0]
+  if (!target) throw new UsageError('usage: devctl diagnose <service>/<worktree> [--json]')
+  const state = loadState()
+  const t = parseTarget(target)
+  const wt = t.worktree
+  const key = entryKey(wt)
+  const tracked = state.stacks[key]
+  const plan = planStack(t.repo, wt, state, undefined)
+  const file = tracked?.ref?.logFile ?? `${process.env.HOME}/.devctl/logs/${key.replace(/\//g, '__')}.log`
+  const output = fs.existsSync(file) ? tailFile(file, 120) : ''
+  out(colors.dim(`--- diagnosing ${key} (port ${plan.port}) ---`))
+  const diagnosis = await runDiagnosis({ key, cmd: plan.cmd, port: plan.port, cwd: plan.path, output })
+  if (!diagnosis.trim()) throw new Error('no diagnosis produced (is the debug agent configured?)')
+  if (json) {
+    console.log(JSON.stringify({ ok: true, key, diagnosis }, null, 2))
+    return
+  }
+  console.log(diagnosis)
+}
+
 async function cmdDoctor(a: TArgs): Promise<void> {
   const cfg = loadConfig()
   const state = loadState()
@@ -1095,7 +1118,11 @@ const GLOBAL_USAGE = `usage: devctl <command>
                                  create worktrees as needed and pin the stack; replacing one asks for confirmation
   stack delete <name> [--yes] [--force]      remove a pinned stack (worktrees untouched)
   logs <repo/branch> [--lines N] [--follow]
+  diagnose <service>/<worktree> [--json]
+                                 hand a service's recent logs to the debug agent for a root cause
   config show [--json]           resolved config with secrets redacted
+  config get <path>              read one value (dotted path, e.g. debug.model)
+  config set <path> <value>      write one value; validates before saving
   context [stack]                markdown status of a stack (default: current) for pasting to agents
   doctor [--json]                check config, binaries, repos, ports, env files, and state
   attach [workspace]             focus a herdr workspace
@@ -1139,10 +1166,17 @@ const HELP: Record<string, string> = {
   logs: `usage: devctl logs <repo/branch> [--lines N] [--follow]
 
   --lines defaults to 50 (1..10000). --follow tails the log.`,
-  doctor: `usage: devctl doctor [--json]`,
-  config: `usage: devctl config show [--json]
+  diagnose: `usage: devctl diagnose <service>/<worktree> [--json]
 
-  Prints the resolved config with secret-looking values (KEY/TOKEN/SECRET/PASSWORD/DSN) redacted.`,
+  Runs the configured debug agent on the service's recent logs and prints ROOT CAUSE / FIX.
+  Works whether the service is running, failed, or stopped. Configure via the "debug" block.`,
+  doctor: `usage: devctl doctor [--json]`,
+  config: `usage: devctl config show [--json] | config get <path> | config set <path> <value>
+
+  show prints the resolved config with secret-looking values (KEY/TOKEN/SECRET/PASSWORD/DSN) redacted.
+  get/set use dotted paths, e.g. "debug.model" or "services.deimos.env.PORT".
+  set parses the value as JSON when possible (true/false/numbers), otherwise as a string.
+  The config is validated before it is written; an invalid edit is rejected.`,
   context: `usage: devctl context [stack]
 
   Prints markdown describing the stack (services, targets, state, URLs) - paste it into an agent.
@@ -1212,6 +1246,8 @@ async function runCommand(rawArgv: string[]): Promise<void> {
       return cmdAttach(parseArgs(args, {}, 'attach'))
     case 'logs':
       return cmdLogs(parseArgs(args, { string: ['lines'], boolean: ['follow'] }, 'logs'))
+    case 'diagnose':
+      return cmdDiagnose(parseArgs(args, { boolean: ['json'] }, 'diagnose'))
     case 'doctor':
       return cmdDoctor(parseArgs(args, { boolean: ['json'] }, 'doctor'))
     case 'config':

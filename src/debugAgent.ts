@@ -35,10 +35,24 @@ function userPath(): string | undefined {
   }
 }
 
-export async function debugFailure(info: { key: string; cmd: string; port: number; cwd: string; output: string }): Promise<void> {
-  if (quiet()) return
-  const command = debugCommand()
-  if (!command) return
+function buildPrompt(info: TDebugInfo): string {
+  const tail = info.output.trim()
+  const output = tail.length > 8_000 ? `…\n${tail.slice(tail.length - 8_000)}` : tail
+  return [
+    `Diagnose the devctl-managed service "${info.key}" (port ${info.port}).`,
+    `Start command (run from ${info.cwd}): ${info.cmd}`,
+    'Its last output:',
+    output || '(no output captured)',
+    '',
+    'Diagnose the root cause. You may read files and run read-only commands in the worktree.',
+    'Do NOT modify files, install dependencies, or start/stop processes.',
+    'Answer in exactly this format:',
+    'ROOT CAUSE: <one sentence>',
+    'FIX: <one or two concrete steps>',
+  ].join('\n')
+}
+
+function spawnAgent(info: TDebugInfo, command: string, stream: boolean): Promise<string> {
   const bin = command.split(/\s+/)[0]
   const env = { ...process.env }
   const path = userPath()
@@ -47,44 +61,56 @@ export async function debugFailure(info: { key: string; cmd: string; port: numbe
     execFileSync('which', [bin], { stdio: 'ignore', timeout: 2_000, env })
   } catch {
     console.error(colors.dim(`debug agent: "${bin}" not found in PATH - skipping diagnosis`))
-    return
+    return Promise.resolve('')
   }
 
-  const prompt = [
-    `The devctl-managed service "${info.key}" failed to start: it never listened on port ${info.port}.`,
-    `Start command (run from ${info.cwd}): ${info.cmd}`,
-    'Its last output:',
-    info.output.trim() || '(no output captured)',
-    '',
-    'Diagnose the root cause. You may read files and run read-only commands in the worktree.',
-    'Do NOT modify files, install dependencies, or start/stop processes.',
-    'Answer in exactly this format:',
-    'ROOT CAUSE: <one sentence>',
-    'FIX: <one or two concrete steps>',
-  ].join('\n')
+  return new Promise<string>((resolve) => {
+    let text = ''
+    const child = spawn('bash', ['-c', `${command} ${shQuote(buildPrompt(info))}`], {
+      cwd: info.cwd,
+      env,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+    const handle = (chunk: Buffer): void => {
+      text += chunk.toString()
+      if (stream) process.stdout.write(chunk)
+    }
+    child.stdout?.on('data', handle)
+    child.stderr?.on('data', handle)
+    const timer = setTimeout(() => {
+      console.error(colors.dim('debug agent: timed out after 180s'))
+      child.kill('SIGTERM')
+    }, 180_000)
+    child.on('exit', () => {
+      clearTimeout(timer)
+      resolve(text.trim())
+    })
+    child.on('error', (err) => {
+      console.error(colors.dim(`debug agent: ${err.message}`))
+      clearTimeout(timer)
+      resolve(text.trim())
+    })
+  })
+}
 
-  console.log(colors.yellow(`→ asking ${bin} to diagnose ${info.key}…`))
-  await runExclusive(
-    () =>
-      new Promise<void>((resolve) => {
-        const child = spawn('bash', ['-c', `${command} ${shQuote(prompt)}`], {
-          cwd: info.cwd,
-          env,
-          stdio: ['ignore', 'inherit', 'inherit'],
-        })
-        const timer = setTimeout(() => {
-          console.error(colors.dim('debug agent: timed out after 180s'))
-          child.kill('SIGTERM')
-        }, 180_000)
-        child.on('exit', () => {
-          clearTimeout(timer)
-          resolve()
-        })
-        child.on('error', (err) => {
-          console.error(colors.dim(`debug agent: ${err.message}`))
-          clearTimeout(timer)
-          resolve()
-        })
-      }),
-  )
+export interface TDebugInfo {
+  key: string
+  cmd: string
+  port: number
+  cwd: string
+  output: string
+}
+
+export async function debugFailure(info: TDebugInfo): Promise<void> {
+  if (quiet()) return
+  const command = debugCommand()
+  if (!command) return
+  console.log(colors.yellow(`→ asking ${command.split(/\s+/)[0]} to diagnose ${info.key}…`))
+  await runExclusive(() => spawnAgent(info, command, true))
+}
+
+export async function runDiagnosis(info: TDebugInfo): Promise<string> {
+  const command = debugCommand()
+  if (!command) throw new Error('debug agent is not enabled in devctl.config.json')
+  return runExclusive(() => spawnAgent(info, command, !quiet()))
 }

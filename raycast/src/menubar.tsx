@@ -1,5 +1,5 @@
 import { Clipboard, Icon, MenuBarExtra, open, showToast, Toast } from '@raycast/api'
-import { run, serviceLogs } from './lib/devctl'
+import { run, runLongCommand, serviceLogs } from './lib/devctl'
 import { useDevctlStatus } from './lib/useDevctlStatus'
 import { useStacks } from './lib/useStacks'
 import { withToast } from './lib/actions'
@@ -65,6 +65,28 @@ export default function Menubar() {
                         await showToast({ style: Toast.Style.Success, title: `${service.repo} logs copied` })
                       } catch (cause) {
                         await showToast({ style: Toast.Style.Failure, title: 'Unable to read logs', message: cause instanceof Error ? cause.message : String(cause) })
+                      }
+                    }}
+                  />
+                )}
+                {service.local && ['failed', 'starting', 'ready'].includes(service.state) && (
+                  <MenuBarExtra.Item
+                    icon={Icon.MedicalSupport}
+                    title="Diagnose"
+                    onAction={async () => {
+                      const target = `${service.repo}/${service.target}`
+                      const toast = await showToast({ style: Toast.Style.Animated, title: `Diagnosing ${target}` })
+                      try {
+                        const parsed = JSON.parse(await runLongCommand(['diagnose', target, '--json'])) as { diagnosis?: string }
+                        const lines = (parsed.diagnosis ?? '').split('\n')
+                        const summary = lines.filter((line) => /^ROOT CAUSE:|^FIX:/.test(line)).join('\n') || (lines.at(-1) ?? 'See logs')
+                        toast.style = Toast.Style.Success
+                        toast.title = target
+                        toast.message = summary
+                      } catch (cause) {
+                        toast.style = Toast.Style.Failure
+                        toast.title = `Diagnose failed`
+                        toast.message = cause instanceof Error ? cause.message.split('\n')[0] : String(cause)
                       }
                     }}
                   />

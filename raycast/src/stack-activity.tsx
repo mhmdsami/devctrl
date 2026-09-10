@@ -5,6 +5,7 @@ import { withToast } from './lib/actions'
 import { useDevctlStatus } from './lib/useDevctlStatus'
 import { useStacks } from './lib/useStacks'
 import { serviceStateLabel, stackView, type ServiceState } from './lib/stackView'
+import Diagnose from './diagnose'
 
 const SERVICE_RANK: Record<ServiceState, number> = { failed: 0, starting: 1, stopped: 2, 'external-test': 3, 'external-prod': 3, ready: 4 }
 
@@ -94,6 +95,14 @@ export function StackActivity({ name, action }: Props) {
                         })
                         if (confirmed) void withToast(`Restarting ${service.key}`, ['restart', `${service.repo}/${service.target}`])
                       }}
+                    />
+                  )}
+                  {service.local && service.state !== 'stopped' && (
+                    <ActionPanel.Item
+                      title="Diagnose"
+                      icon={Icon.MedicalSupport}
+                      shortcut={{ modifiers: ['cmd', 'shift'], key: 'd' }}
+                      onAction={() => push(<Diagnose target={service.key} title={`${service.repo}/${service.target}`} />)}
                     />
                   )}
                   </ActionPanel.Section>
