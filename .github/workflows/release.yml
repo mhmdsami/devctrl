@@ -1,0 +1,52 @@
+name: Release Raycast Extension
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release (e.g. 1.0.3)"
+        required: true
+      notes:
+        description: "Changelog notes for this version"
+        required: false
+        default: "Bug fixes and improvements"
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Bump version and changelog
+        run: |
+          node -e '
+            const fs = require("fs");
+            const pkg = "raycast/package.json";
+            const p = JSON.parse(fs.readFileSync(pkg, "utf8"));
+            if (p.version === process.env.VERSION) throw new Error(`version ${process.env.VERSION} already set`);
+            p.version = process.env.VERSION;
+            fs.writeFileSync(pkg, JSON.stringify(p, null, 2) + "\n");
+            const log = "raycast/CHANGELOG.md";
+            const entry = `## ${process.env.VERSION} - ${new Date().toISOString().slice(0, 10)}\n\n${process.env.NOTES}\n\n`;
+            fs.writeFileSync(log, "# Changelog\n\n" + entry + fs.readFileSync(log, "utf8").replace(/^# Changelog\n\n/, ""));
+          '
+        env:
+          VERSION: ${{ inputs.version }}
+          NOTES: ${{ inputs.notes }}
+      - uses: raycast/github-actions/setup-cli@v1.18.0
+        with:
+          version: 1.104.6
+      - uses: raycast/github-actions/ray-cli@v1.18.0
+        with:
+          paths: raycast
+          command: publish
+          access_token: ${{ secrets.RAYCAST_ORGANIZATION_TOKEN }}
+      - name: Commit, tag, push
+        run: |
+          git config user.name "release-bot"
+          git config user.email "actions@github.com"
+          git add raycast/package.json raycast/CHANGELOG.md
+          git commit -m "chore: release v${{ inputs.version }}"
+          git tag "v${{ inputs.version }}"
+          git push origin HEAD "v${{ inputs.version }}"
