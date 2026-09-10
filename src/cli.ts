@@ -5,8 +5,8 @@ process.env.PATH = [...PATH_DIRS, ...pathEntries.filter((d) => !PATH_DIRS.includ
 import { closeWorkspaceByLabel, findRefByLabel, focusTab, focusWorkspace, refAlive, refExited, refOutput, requireRunner, rerunIn, start, stopRef, sweepDevctlTabs } from './session'
 import { killTree, pidsListeningOnPort, tcpAlive } from './process'
 import { loadConfig, repoDir, resolveConfigPath } from './config'
-import { seedEnvFiles } from './envfile'
 import { createWorktree, isShared, repoKeys as repoKeysFromRegistry, entryKey, findWorktree, listAllWorktrees, listWorktrees, parseTarget, resolveCwdTarget, type TRepoKey } from './registry'
+import { seedEnvFiles } from './envfile'
 import { loadState, saveState, STATE_FILE, type TStackState, type TDevctlState } from './state'
 import { depsOf, dependentsOf, hasWiring, planStack, providersOf, type TStackPlan } from './stacks'
 import { resolveStack } from './stackRegistry'
@@ -57,6 +57,7 @@ interface TStartSummary {
   reused: string[]
   restarted: string[]
   failed: string[]
+  shared: string[]
 }
 
 function detectInstall(cwd: string): string | null {
@@ -139,7 +140,10 @@ async function ensureStack(
         const plan = planStack(repo, wt, state, stackDef)
         const ref = start(key, plan.path, plan.env, plan.cmd, plan.port)
         recordStack(ref)
-        if (await waitFor(key, plan, ref, false)) summary.restarted.push(key)
+        if (await waitFor(key, plan, ref, false)) {
+          if (isShared(repo)) summary.shared.push(key)
+          else summary.restarted.push(key)
+        }
         else {
           summary.failed.push(key)
           cleanupFailedEntry(state, key, ref)
@@ -147,7 +151,8 @@ async function ensureStack(
         return
       }
       recordStack(refFromTab, tracked?.startedAt)
-      summary.reused.push(key)
+      if (isShared(repo)) summary.shared.push(key)
+      else summary.reused.push(key)
       out(colors.green(`● ${key} already running http://localhost:${wt.port}`))
       return
     }
@@ -156,7 +161,10 @@ async function ensureStack(
     if (refFromTab.paneId) {
       rerunIn(refFromTab, plan.env, plan.cmd)
       recordStack(refFromTab)
-      if (await waitFor(key, plan, refFromTab, false)) summary.restarted.push(key)
+      if (await waitFor(key, plan, refFromTab, false)) {
+        if (isShared(repo)) summary.shared.push(key)
+        else summary.restarted.push(key)
+      }
       else {
         summary.failed.push(key)
         cleanupFailedEntry(state, key, refFromTab)
@@ -166,7 +174,10 @@ async function ensureStack(
       ensureDeps(key, repo, wt)
       const ref = start(key, plan.path, plan.env, plan.cmd, plan.port)
       recordStack(ref)
-      if (await waitFor(key, plan, ref, false)) summary.restarted.push(key)
+      if (await waitFor(key, plan, ref, false)) {
+        if (isShared(repo)) summary.shared.push(key)
+        else summary.restarted.push(key)
+      }
       else {
         summary.failed.push(key)
         cleanupFailedEntry(state, key, ref)
@@ -194,10 +205,14 @@ async function ensureStack(
 
   const ref = start(key, plan.path, plan.env, plan.cmd, plan.port, undefined, { detached: shared })
   recordStack(ref)
-  if (await waitFor(key, plan, ref, shared)) summary.started.push(key)
-  else {
+  const ok = await waitFor(key, plan, ref, shared)
+  if (!ok) {
     summary.failed.push(key)
     cleanupFailedEntry(state, key, ref)
+  } else if (shared) {
+    summary.shared.push(key)
+  } else {
+    summary.started.push(key)
   }
 }
 
@@ -317,7 +332,7 @@ async function cmdUp(a: TArgs): Promise<void> {
   }
 
   const attempted = new Set<string>()
-  const summary: TStartSummary = { started: [], reused: [], restarted: [], failed: [] }
+  const summary: TStartSummary = { started: [], reused: [], restarted: [], failed: [], shared: [] }
 
   const results = await Promise.allSettled(
     targets.map((t) => ensureStack(t.repo, t.branchOrName, state, stackDef, attempted, force, summary)),
@@ -346,6 +361,7 @@ async function cmdUp(a: TArgs): Promise<void> {
   if (summary.reused.length) parts.push(colors.green(`${summary.reused.length} reused`))
   if (summary.restarted.length) parts.push(colors.yellow(`${summary.restarted.length} restarted`))
   if (summary.failed.length) parts.push(colors.red(`${summary.failed.length} failed: ${summary.failed.join(', ')}`))
+  if (summary.shared.length) parts.push(colors.dim(`+ ${summary.shared.join(', ')} (shared)`))
   if (parts.length) console.log(colors.dim(`summary: ${parts.join(', ')}`))
 }
 
@@ -387,15 +403,28 @@ async function cmdDown(a: TArgs): Promise<void> {
   if (target && !isRepoName(target) && !wantsAll) {
     const stackDef = resolveStack(target, state.stackDefs)
     out(`stack ${target}: down`)
+    let left = 0
     for (const repo of repoKeysFromRegistry()) {
       const service = stackDef.services[repo]
       if (service && service !== 'test' && service !== 'prod') {
         const wt = findWorktree(repo, service)
-        stopOne(entryKey(wt))
+        const key = entryKey(wt)
+        const claim = state.stacks[key]?.stack
+        if (claim && claim !== stackDef.name) {
+          left++
+          out(colors.dim(`~ ${key} still claimed by stack ${claim} - leaving it running`))
+          continue
+        }
+        if (!state.stacks[key]) {
+          left++
+          continue
+        }
+        stopOne(key)
       }
     }
     closeWorkspaceByLabel(target)
     saveState(state)
+    out(colors.green(`stack ${target}: stopped ${stopped.length}, untouched ${left}`))
     emitMutationResult(json, { ok: process.exitCode !== 1, stopped })
     return
   }
@@ -751,7 +780,7 @@ async function cmdRestart(a: TArgs): Promise<void> {
   saveState(state)
 
   const attempted = new Set<string>()
-  const summary: TStartSummary = { started: [], reused: [], restarted: [], failed: [] }
+  const summary: TStartSummary = { started: [], reused: [], restarted: [], failed: [], shared: [] }
   await ensureStack(t.repo, t.worktree.name, state, stackDef, attempted, force, summary)
   if (summary.failed.length > 0) process.exitCode = 1
   else out(colors.green(`restarted ${key}${stackDef ? ` (stack ${stackDef.name})` : ''}`))
