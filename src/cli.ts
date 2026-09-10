@@ -71,7 +71,17 @@ function detectInstall(cwd: string): string | null {
 function ensureDeps(key: string, repo: TRepoKey, wt: { path: string }): void {
   if (isShared(repo)) return
   seedEnvFiles(wt.path, repoDir(repo))
-  if (fs.existsSync(path.join(wt.path, 'node_modules', '.bin'))) return
+  const nm = path.join(wt.path, 'node_modules')
+  if (fs.existsSync(path.join(nm, '.bin'))) return
+  try {
+    if (fs.lstatSync(nm).isSymbolicLink()) {
+      const target = path.resolve(path.dirname(nm), fs.readlinkSync(nm))
+      if (!fs.existsSync(target)) {
+        fs.rmSync(nm)
+        out(colors.yellow(`~ ${key}: removed dangling node_modules symlink`))
+      }
+    }
+  } catch {}
   const cmd = loadConfig().services[repo]?.install ?? detectInstall(wt.path)
   if (!cmd) return
   out(colors.yellow(`~ ${key}: node_modules missing - running ${cmd}`))
@@ -99,6 +109,8 @@ async function ensureStack(
   const wt = findWorktree(repo, branchOrName)
   const key = entryKey(wt)
   const portlessName = portlessDnsName(repo, wt)
+  const plan = planStack(repo, wt, state, stackDef)
+  const wiringFingerprint = hasWiring(repo) ? JSON.stringify({ port: plan.port, env: plan.env }) : undefined
 
   const existingRef = findRefByLabel(trackedTabWorkspace(state, key), key)
   const tracked = state.stacks[key]
@@ -114,6 +126,7 @@ async function ensureStack(
       url: `http://localhost:${wt.port}`,
       portlessName,
       stack: stackDef?.name,
+      wiring: wiringFingerprint,
       startedAt: startedAt ?? new Date().toISOString(),
     }
     state.stacks[entry.key] = entry
@@ -131,14 +144,13 @@ async function ensureStack(
   if (refFromTab) {
     if (await tcpAlive(wt.port)) {
       const claim = tracked?.stack
-      const needsRewire = hasWiring(repo) && claim !== stackDef?.name
+      const needsRewire = hasWiring(repo) && (claim !== stackDef?.name || tracked?.wiring !== wiringFingerprint)
       if (needsRewire) {
         out(colors.yellow(`~ ${key}: rewiring for stack ${stackDef?.name ?? '(global)'} - restarting`))
         stopRef(refFromTab, key, { force })
         for (let i = 0; i < 20 && (await tcpAlive(wt.port)); i++) await sleep(500)
         if (await tcpAlive(wt.port)) throw new Error(`port ${wt.port} still occupied after stopping ${key} - re-run with --force`)
         ensureDeps(key, repo, wt)
-        const plan = planStack(repo, wt, state, stackDef)
         const ref = start(key, plan.path, plan.env, plan.cmd, plan.port)
         recordStack(ref)
         if (await waitFor(key, plan, ref, false)) {
@@ -157,7 +169,6 @@ async function ensureStack(
       out(colors.green(`● ${key} already running http://localhost:${wt.port}`))
       return
     }
-    const plan = planStack(repo, wt, state, stackDef)
     out(colors.yellow(`~ ${key}: tab exists but port ${wt.port} is down - restarting`))
     if (refFromTab.paneId) {
       rerunIn(refFromTab, plan.env, plan.cmd)
@@ -190,7 +201,6 @@ async function ensureStack(
   if (tracked) delete state.stacks[key]
 
   ensureDeps(key, repo, wt)
-  const plan = planStack(repo, wt, state, stackDef)
   const shared = isShared(repo)
 
   if (!shared) {
@@ -345,6 +355,16 @@ async function cmdUp(a: TArgs): Promise<void> {
     }
   }
 
+  if (stackDef) {
+    const members = new Set(Object.entries(stackDef.services).map(([repo, wt]) => `${repo}/${wt}`))
+    for (const [key, entry] of Object.entries(state.stacks)) {
+      if (entry.stack !== stackDef.name || members.has(key) || isShared(entry.repo)) continue
+      out(colors.yellow(`~ ${key}: dropped from stack ${stackDef.name} - stopping`))
+      stopRunningEntry(state, key, force)
+    }
+    saveState(state)
+  }
+
   if (json) {
     console.log(
       JSON.stringify(
@@ -411,10 +431,13 @@ async function cmdDown(a: TArgs): Promise<void> {
         const wt = findWorktree(repo, service)
         const key = entryKey(wt)
         const claim = state.stacks[key]?.stack
-        if (claim && claim !== stackDef.name) {
+        if (claim && claim !== stackDef.name && state.stackDefs[claim]?.services?.[repo] === service) {
           left++
           out(colors.dim(`~ ${key} still claimed by stack ${claim} - leaving it running`))
           continue
+        }
+        if (claim && claim !== stackDef.name) {
+          out(colors.dim(`~ ${key}: stale claim from stack ${claim} - taking it over`))
         }
         if (!state.stacks[key]) {
           left++

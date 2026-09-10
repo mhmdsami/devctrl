@@ -26,6 +26,7 @@ export interface TStackState {
   url: string
   portlessName?: string
   stack?: string
+  wiring?: string
   startedAt: string
 }
 
