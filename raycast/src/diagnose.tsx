@@ -7,13 +7,20 @@ export default function Diagnose({ target, title }: { target: string; title: str
   const [done, setDone] = useState(false)
 
   useEffect(() => {
+    let cancelled = false
     let buffer = ''
     const handle = spawnDevctl(['diagnose', target], (chunk) => {
+      if (cancelled) return
       buffer += chunk
       setOutput(buffer)
     })
-    handle.promise.finally(() => setDone(true))
-    return () => handle.kill()
+    void handle.promise.finally(() => {
+      if (!cancelled) setDone(true)
+    })
+    return () => {
+      cancelled = true
+      handle.kill()
+    }
   }, [target])
 
   return (

@@ -1,7 +1,7 @@
 import { Action, ActionPanel, Clipboard, confirmAlert, Icon, List, showHUD, showToast, Toast, useNavigation } from '@raycast/api'
 import { useEffect, useRef, useState } from 'react'
 import { followLogsInTerminal, openInEditor, revealInFinder, runLongCommand, serviceLogs, statusJson, worktreePathFor } from './lib/devctl'
-import { withToast } from './lib/actions'
+import { toastSafely, withToast } from './lib/actions'
 import { useDevctlStatus } from './lib/useDevctlStatus'
 import { useStacks } from './lib/useStacks'
 import { serviceStateLabel, stackView, type ServiceState } from './lib/stackView'
@@ -27,14 +27,21 @@ export function StackActivity({ name, action }: Props) {
   useEffect(() => {
     if (action === 'view' || started.current) return
     started.current = true
+    let cancelled = false
     void runLongCommand(['stack', action, name])
-      .then(() => setCommandState('complete'))
+      .then(() => {
+        if (!cancelled) setCommandState('complete')
+      })
       .catch(async (cause) => {
+        if (cancelled) return
         const message = cause instanceof Error ? cause.message : String(cause)
         setCommandError(message)
         setCommandState('failed')
-        await showToast({ style: Toast.Style.Failure, title: `Unable to ${action} stack`, message })
+        await toastSafely({ style: Toast.Style.Failure, title: `Unable to ${action} stack`, message })
       })
+    return () => {
+      cancelled = true
+    }
   }, [action, name])
 
   return (
@@ -121,7 +128,7 @@ export function StackActivity({ name, action }: Props) {
                           if (!path) throw new Error('worktree not found')
                           await openInEditor(path)
                         } catch (cause) {
-                          await showToast({ style: Toast.Style.Failure, title: 'Unable to open editor', message: cause instanceof Error ? cause.message : String(cause) })
+                          await toastSafely({ style: Toast.Style.Failure, title: 'Unable to open editor', message: cause instanceof Error ? cause.message : String(cause) })
                         }
                       }}
                     />
@@ -137,7 +144,7 @@ export function StackActivity({ name, action }: Props) {
                           if (!logFile) throw new Error('no log file tracked for this service')
                           await followLogsInTerminal(logFile)
                         } catch (cause) {
-                          await showToast({ style: Toast.Style.Failure, title: 'Unable to open Terminal', message: cause instanceof Error ? cause.message : String(cause) })
+                          await toastSafely({ style: Toast.Style.Failure, title: 'Unable to open Terminal', message: cause instanceof Error ? cause.message : String(cause) })
                         }
                       }}
                     />
@@ -153,7 +160,7 @@ export function StackActivity({ name, action }: Props) {
                             if (!path) throw new Error('worktree not found')
                             await revealInFinder(path)
                           } catch (cause) {
-                            await showToast({ style: Toast.Style.Failure, title: 'Unable to reveal', message: cause instanceof Error ? cause.message : String(cause) })
+                            await toastSafely({ style: Toast.Style.Failure, title: 'Unable to reveal', message: cause instanceof Error ? cause.message : String(cause) })
                           }
                         }}
                       />
@@ -173,7 +180,7 @@ export function StackActivity({ name, action }: Props) {
                           await Clipboard.copy(await serviceLogs(`${service.repo}/${service.target}`))
                           await showHUD(`${service.repo} logs copied`)
                         } catch (cause) {
-                          await showToast({ style: Toast.Style.Failure, title: 'Unable to read logs', message: cause instanceof Error ? cause.message : String(cause) })
+                          await toastSafely({ style: Toast.Style.Failure, title: 'Unable to read logs', message: cause instanceof Error ? cause.message : String(cause) })
                         }
                       }}
                     />

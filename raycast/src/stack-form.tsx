@@ -1,5 +1,5 @@
-import { Action, ActionPanel, confirmAlert, Form, Icon, showToast, Toast, useNavigation, type Image } from '@raycast/api'
-import { withToast } from './lib/actions'
+import { Action, ActionPanel, confirmAlert, Form, Icon, Toast, useNavigation, type Image } from '@raycast/api'
+import { toastSafely, withToast } from './lib/actions'
 import { useState } from 'react'
 import { useWorktrees } from './lib/useWorktrees'
 
@@ -48,7 +48,7 @@ export function StackForm({
     if (busy) return
     const name = editing ? initial!.name : values.name?.trim()
     if (!name) {
-      await showToast({ style: Toast.Style.Failure, title: 'Stack ID is required' })
+      await toastSafely({ style: Toast.Style.Failure, title: 'Stack ID is required' })
       return
     }
     const removed = editing

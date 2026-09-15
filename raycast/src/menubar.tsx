@@ -2,7 +2,7 @@ import { Clipboard, Icon, MenuBarExtra, open, showToast, Toast } from '@raycast/
 import { run, runLongCommand, serviceLogs } from './lib/devctl'
 import { useDevctlStatus } from './lib/useDevctlStatus'
 import { useStacks } from './lib/useStacks'
-import { withToast } from './lib/actions'
+import { toastSafely, updateToast, withToast } from './lib/actions'
 import { serviceStateLabel, stackView, type ServiceState } from './lib/stackView'
 
 const stateIcon = (state: ServiceState | 'external') => {
@@ -62,9 +62,9 @@ export default function Menubar() {
                     onAction={async () => {
                       try {
                         await Clipboard.copy(await serviceLogs(`${service.repo}/${service.target}`))
-                        await showToast({ style: Toast.Style.Success, title: `${service.repo} logs copied` })
+                        await toastSafely({ style: Toast.Style.Success, title: `${service.repo} logs copied` })
                       } catch (cause) {
-                        await showToast({ style: Toast.Style.Failure, title: 'Unable to read logs', message: cause instanceof Error ? cause.message : String(cause) })
+                        await toastSafely({ style: Toast.Style.Failure, title: 'Unable to read logs', message: cause instanceof Error ? cause.message : String(cause) })
                       }
                     }}
                   />
@@ -75,18 +75,19 @@ export default function Menubar() {
                     title="Diagnose"
                     onAction={async () => {
                       const target = `${service.repo}/${service.target}`
-                      const toast = await showToast({ style: Toast.Style.Animated, title: `Diagnosing ${target}` })
+                      const toast = await showToast({ style: Toast.Style.Animated, title: `Diagnosing ${target}` }).catch(() => null)
+                      if (!toast) return
                       try {
                         const parsed = JSON.parse(await runLongCommand(['diagnose', target, '--json'])) as { diagnosis?: string }
                         const lines = (parsed.diagnosis ?? '').split('\n')
                         const summary = lines.filter((line) => /^ROOT CAUSE:|^FIX:/.test(line)).join('\n') || (lines.at(-1) ?? 'See logs')
-                        toast.style = Toast.Style.Success
-                        toast.title = target
-                        toast.message = summary
+                        updateToast(toast, { style: Toast.Style.Success, title: target, message: summary })
                       } catch (cause) {
-                        toast.style = Toast.Style.Failure
-                        toast.title = `Diagnose failed`
-                        toast.message = cause instanceof Error ? cause.message.split('\n')[0] : String(cause)
+                        updateToast(toast, {
+                          style: Toast.Style.Failure,
+                          title: 'Diagnose failed',
+                          message: cause instanceof Error ? cause.message.split('\n')[0] : String(cause),
+                        })
                       }
                     }}
                   />
@@ -104,9 +105,9 @@ export default function Menubar() {
               onAction={async () => {
                 try {
                   await Clipboard.copy(await run(['context', row.id]))
-                  await showToast({ style: Toast.Style.Success, title: `${row.title} agent context copied` })
+                  await toastSafely({ style: Toast.Style.Success, title: `${row.title} agent context copied` })
                 } catch (cause) {
-                  await showToast({ style: Toast.Style.Failure, title: 'Unable to copy agent context', message: cause instanceof Error ? cause.message : String(cause) })
+                  await toastSafely({ style: Toast.Style.Failure, title: 'Unable to copy agent context', message: cause instanceof Error ? cause.message : String(cause) })
                 }
               }}
             />
