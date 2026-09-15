@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.4 - 2026-09-15
+
+Guard async callbacks so unloading the extension worker cannot surface Worker unloaded errors.
+
 ## 1.0.3 - 2026-09-10
 
 Diagnose action for running and failed services; menubar shows only fully up stacks; steadier polling; config get/set.
