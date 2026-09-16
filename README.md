@@ -43,8 +43,10 @@ let the graph start them whenever a dependent service comes up.
 ## Nomenclature
 
 Everything is `<service>/<worktree-name>` - e.g. `web/ft-my-feature`. The repo root working
-tree is called `head` (it holds whatever the repo's current HEAD is); ports are derived
-from worktree discovery order (index 0 = `head`). Named URLs follow:
+tree is called `head` (it holds whatever the repo's current HEAD is). Ports are pinned per
+worktree: `head` keeps the service's `basePort`, and every other worktree is assigned the
+next free slot the first time devctl sees it, then remembered in state. Adding or removing
+worktrees never moves an existing one's port. Named URLs follow:
 `https://<branch>.<service>.localhost:1355` (`main`/`master` branches get the bare
 `https://<service>.localhost`).
 

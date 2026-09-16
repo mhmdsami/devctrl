@@ -2,6 +2,7 @@ import { execFileSync } from 'child_process'
 import fs from 'fs'
 import path from 'path'
 import { LEGACY_WORKTREES_REL, loadConfig, repoPath, worktreePath } from './config'
+import { loadState, saveState } from './state'
 
 export type TRepoKey = string
 
@@ -18,9 +19,51 @@ export interface TWorktree {
   name: string
   branch: string | null
   path: string
-  index: number
+  slot: number
   port: number
   inspectPort: number | null
+}
+
+export const SLOT_GAP = 9
+
+export function slotPort(basePort: number, slot: number): number {
+  return basePort + (slot === 0 ? 0 : SLOT_GAP + slot)
+}
+
+export function assignSlots(
+  keys: string[],
+  runningPorts: Record<string, number>,
+  persisted: Record<string, number>,
+  basePort: number,
+): Record<string, number> {
+  const slots: Record<string, number> = {}
+  const used = new Set<number>()
+  for (const key of keys) {
+    const running = runningPorts[key]
+    if (running === undefined) continue
+    const derived = running - basePort - SLOT_GAP
+    if (Number.isInteger(derived) && derived > 0 && !used.has(derived)) {
+      slots[key] = derived
+      used.add(derived)
+    }
+  }
+  for (const key of keys) {
+    if (slots[key] !== undefined) continue
+    const known = persisted[key]
+    if (known === 0 || (known !== undefined && known > 0 && !used.has(known))) {
+      slots[key] = known
+      used.add(known)
+      continue
+    }
+  }
+  for (const key of keys) {
+    if (slots[key] !== undefined) continue
+    let slot = key === keys[0] ? 0 : 1
+    if (slot === 1) while (used.has(slot)) slot++
+    slots[key] = slot
+    used.add(slot)
+  }
+  return slots
 }
 
 export function entryName(wt: TWorktree): string {
@@ -84,7 +127,7 @@ function migrateLegacyWorktree(root: string, wtPath: string): string {
 export function listWorktrees(repo: TRepoKey): TWorktree[] {
   const svc = cfgForRepo(repo)
   if (svc.shared) {
-    return [{ repo, name: 'head', branch: null, path: repoDir(repo), index: 0, port: svc.basePort, inspectPort: svc.inspectBasePort ?? null }]
+    return [{ repo, name: 'head', branch: null, path: repoDir(repo), slot: 0, port: svc.basePort, inspectPort: svc.inspectBasePort ?? null }]
   }
   const root = repoDir(repo)
   const out = git(root, ['worktree', 'list', '--porcelain'])
@@ -101,15 +144,32 @@ export function listWorktrees(repo: TRepoKey): TWorktree[] {
     ...linked.map((p) => ({ tree: { path: p, branch: parsed.find((t) => t.path === p)?.branch ?? null }, name: path.basename(p) })),
   ].filter((e) => e.tree) as Array<{ tree: { path: string; branch: string | null }; name: string }>
 
-  return ordered.map((entry, index) => ({
-    repo,
-    name: entry.name,
-    branch: entry.tree.branch,
-    path: entry.tree.path,
-    index,
-    port: svc.basePort + (index === 0 ? 0 : 9 + index),
-    inspectPort: svc.inspectBasePort != null ? svc.inspectBasePort + index : null,
-  }))
+  const state = loadState()
+  const keys = ordered.map((entry) => `${repo}/${entry.name}`)
+  const runningPorts: Record<string, number> = {}
+  for (const key of keys) {
+    const tracked = state.stacks[key]
+    if (tracked) runningPorts[key] = tracked.port
+  }
+  const assigned = assignSlots(keys, runningPorts, state.slots ?? {}, svc.basePort)
+  const merged = { ...(state.slots ?? {}), ...assigned }
+  if (JSON.stringify(merged) !== JSON.stringify(state.slots ?? {})) {
+    state.slots = merged
+    saveState(state)
+  }
+
+  return ordered.map((entry) => {
+    const slot = assigned[`${repo}/${entry.name}`] ?? 0
+    return {
+      repo,
+      name: entry.name,
+      branch: entry.tree.branch,
+      path: entry.tree.path,
+      slot,
+      port: slotPort(svc.basePort, slot),
+      inspectPort: svc.inspectBasePort != null ? svc.inspectBasePort + slot : null,
+    }
+  })
 }
 
 export function isShared(repo: TRepoKey): boolean {

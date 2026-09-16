@@ -3,6 +3,7 @@ import { execFileSync } from 'child_process'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
+import { assignSlots, slotPort } from './registry'
 
 const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'devctl-test-')))
 for (const repo of ['infra', 'api', 'web']) {
@@ -65,6 +66,27 @@ assert.strictEqual(remote.API_URL, 'https://api.test.example.com')
 
 const local = resolveWiring({ env: 'test', targets: { web: 'api/head' } }, 'web')
 assert.strictEqual(local.API_URL, 'http://localhost:3000/api')
+
+const basePort = 6007
+const running = { 'espeon/ft-configurable-text-banner': 6017, 'espeon/ho-lfc-qa': 6018 }
+const pinned = assignSlots(['espeon/head', 'espeon/ft-configurable-text-banner', 'espeon/ho-lfc-qa'], running, {}, basePort)
+assert.strictEqual(pinned['espeon/head'], 0)
+assert.strictEqual(pinned['espeon/ho-lfc-qa'], 2)
+
+const shifted = assignSlots(
+  ['espeon/head', 'espeon/ft-configurable-text-banner', 'espeon/ft-product-card-carousel', 'espeon/ho-lfc-qa'],
+  running,
+  pinned,
+  basePort,
+)
+assert.strictEqual(shifted['espeon/ho-lfc-qa'], 2)
+assert.strictEqual(slotPort(basePort, shifted['espeon/ho-lfc-qa']!), 6018)
+assert.strictEqual(shifted['espeon/ft-product-card-carousel'], 3)
+assert.strictEqual(slotPort(basePort, shifted['espeon/ft-product-card-carousel']!), 6019)
+
+const afterStop = assignSlots(['espeon/head', 'espeon/ft-product-card-carousel', 'espeon/ho-lfc-qa'], {}, shifted, basePort)
+assert.strictEqual(afterStop['espeon/ft-product-card-carousel'], 3)
+assert.strictEqual(afterStop['espeon/ho-lfc-qa'], 2)
 
 fs.rmSync(root, { recursive: true, force: true })
 console.log('graph self-check passed')

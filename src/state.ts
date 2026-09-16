@@ -42,10 +42,11 @@ export interface TDevctlState {
   env: 'test' | 'prod'
   targets: Record<string, string>
   stackDefs: Record<string, TStackDef>
+  slots: Record<string, number>
 }
 
 function emptyState(): TDevctlState {
-  return { version: STATE_VERSION, stacks: {}, env: 'test', targets: {}, stackDefs: {} }
+  return { version: STATE_VERSION, stacks: {}, env: 'test', targets: {}, stackDefs: {}, slots: {} }
 }
 
 export function loadState(): TDevctlState {
@@ -90,6 +91,7 @@ function normalize(state: TDevctlState & { payloadTargets?: Record<string, strin
     env: state.env ?? 'test',
     targets: state.targets ?? state.payloadTargets ?? {},
     stackDefs: state.stackDefs ?? {},
+    slots: state.slots ?? {},
   }
 }
 
