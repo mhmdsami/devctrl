@@ -35,6 +35,10 @@ export function dnsName(repo: string, wt: { name: string; branch: string | null 
   return `${sanitizeLabel(label)}.${repo}`
 }
 
+export async function portlessProxyUp(): Promise<boolean> {
+  return (await tcpAlive(443, 250)) || (await tcpAlive(1355, 250))
+}
+
 export async function portlessUrl(name: string): Promise<string | null> {
   if (await tcpAlive(443, 250)) return `https://${name}.localhost`
   if (await tcpAlive(1355, 250)) return `https://${name}.localhost:1355`

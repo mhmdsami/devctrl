@@ -11,7 +11,7 @@ import { seedEnvFiles } from './envfile'
 import { loadState, saveState, STATE_FILE, type TStackState, type TDevctlState } from './state'
 import { depsOf, dependentsOf, hasWiring, planStack, providersOf, type TStackPlan } from './stacks'
 import { resolveStack } from './stackRegistry'
-import { alias as portlessAlias, dnsName as portlessDnsName, portlessAvailable, portlessUrl, removeAlias as portlessRemoveAlias } from './portless'
+import { alias as portlessAlias, dnsName as portlessDnsName, portlessAvailable, portlessProxyUp, portlessUrl, removeAlias as portlessRemoveAlias } from './portless'
 import { sleep, colors, setQuiet, out, quiet, setColorEnabled } from './util'
 import { parseArgs, flag, opt, positional, type TArgs, UsageError } from './args'
 import { tailFile } from './logtail'
@@ -729,7 +729,17 @@ async function cmdDoctor(a: TArgs): Promise<void> {
   add('state', fs.existsSync(STATE_FILE) ? 'ok' : 'warn', fs.existsSync(STATE_FILE) ? STATE_FILE : `${STATE_FILE} has not been created yet`)
   add('git', binary('git') ? 'ok' : 'error', binary('git') ? 'available' : 'not found in PATH')
   add('runner', !cfg.herdr.enabled || binary('herdr') ? 'ok' : 'error', cfg.herdr.enabled ? (binary('herdr') ? 'herdr available' : 'herdr enabled but not found') : 'plain detached process mode')
-  add('portless', portlessAvailable() ? 'ok' : 'warn', portlessAvailable() ? 'available' : 'not running; localhost aliases will be unavailable')
+  const portlessCli = portlessAvailable()
+  const portlessProxy = portlessCli ? await portlessProxyUp() : false
+  add(
+    'portless',
+    portlessCli && portlessProxy ? 'ok' : 'warn',
+    !portlessCli
+      ? 'not installed; localhost aliases will be unavailable'
+      : portlessProxy
+        ? 'proxy listening on 443/1355'
+        : 'CLI present but no proxy on 443/1355 - run `portless proxy start` for named URLs',
+  )
 
   for (const [service, serviceConfig] of Object.entries(cfg.services)) {
     const dir = repoDir(service)
