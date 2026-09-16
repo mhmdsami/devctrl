@@ -13,6 +13,7 @@ export interface TProcRef {
   pid?: number
   startToken?: string
   logFile?: string
+  logOffset?: number
   port: number
 }
 

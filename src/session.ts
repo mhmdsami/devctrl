@@ -6,6 +6,7 @@ import { sleepSync } from './util'
 import { tailFile } from './logtail'
 
 export interface TProcRef {
+  logOffset?: number
   workspaceId?: string
   tabId?: string
   paneId?: string
@@ -93,6 +94,7 @@ export function start(
 ): TProcRef {
   const prefixed = `${envExports(env)}${command}`
   const logFile = logFileFor(key)
+  const logOffset = fs.existsSync(logFile) ? fs.statSync(logFile).size : 0
   if (herdrEnabled() && !opts.detached) {
     const ws = herdrWorkspaceId(workspaceLabel)
     const args = ['tab', 'create', '--workspace', ws.workspaceId, '--label', key, '--cwd', cwd]
@@ -111,6 +113,7 @@ export function start(
       startToken: shellPid ? processStartToken(shellPid) ?? undefined : undefined,
       exitMarker,
       logFile,
+      logOffset,
       port,
     }
   }
@@ -118,7 +121,13 @@ export function start(
   const out = fs.openSync(logFile, 'a')
   const child = spawn('bash', ['-c', prefixed], { cwd, detached: true, stdio: ['ignore', out, out] })
   child.unref()
-  return { pid: child.pid!, startToken: processStartToken(child.pid!) ?? undefined, logFile, port }
+  return {
+    pid: child.pid!,
+    startToken: processStartToken(child.pid!) ?? undefined,
+    logFile,
+    logOffset,
+    port,
+  }
 }
 
 export function rerunIn(ref: TProcRef, env: Record<string, string>, command: string): void {
@@ -259,6 +268,19 @@ export function sweepDevctlTabs(): number {
 }
 
 export function refOutput(ref: TProcRef, lines = 30): string {
+  if (ref.logFile && ref.logOffset !== undefined && ref.logOffset > 0 && fs.existsSync(ref.logFile)) {
+    const size = fs.statSync(ref.logFile).size
+    if (size > ref.logOffset) {
+      const fd = fs.openSync(ref.logFile, 'r')
+      const length = size - ref.logOffset
+      const buffer = Buffer.alloc(length)
+      fs.readSync(fd, buffer, 0, length, ref.logOffset)
+      fs.closeSync(fd)
+      const slice = buffer.toString('utf8').replace(/\n$/, '')
+      return slice.split('\n').slice(-lines).join('\n')
+    }
+    return ''
+  }
   if (ref.logFile) return tailFile(ref.logFile, lines)
   if (herdrEnabled() && ref.paneId) {
     try {
