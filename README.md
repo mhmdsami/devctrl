@@ -62,7 +62,7 @@ roles - services form a **dependency graph**:
 - `dependsOn` - extra edges without env wiring (startup order only)
 - `shared: true` - one instance instead of per-worktree: fixed `basePort`, no worktrees,
   `command` brings it up (idempotent is fine), optional `stopCommand` tears it down.
-  Health is port-based. `devctl down <name>` runs `stopCommand`; the port is never
+  Health is port-based unless you set `healthCommand` (e.g. a mongosh ping), which must exit 0. `devctl down <name>` runs `stopCommand`; the port is never
   orphan-killed for shared services. There can be any number of shared services
   (`mongo`, `redis`, `sqs`, …) - dependents pick exactly the ones they need.
   Shared services are infra, not stack members: they never take branch/test/prod

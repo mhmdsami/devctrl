@@ -18,6 +18,7 @@ export interface TServiceConfig {
   env: Record<string, string>
   envExternals?: Record<string, Record<string, string>>
   healthTimeoutMs: number
+  healthCommand?: string
   shared?: boolean
   stopCommand?: string
   install?: string

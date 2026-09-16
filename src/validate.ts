@@ -72,6 +72,9 @@ function validateService(services: Record<string, unknown>, name: string, raw: u
     throw new ConfigError(`services.${name}.inspectBasePort`, 'expected positive number when set')
   }
   if (typeof s.command !== 'string' || !s.command) throw new ConfigError(`services.${name}.command`, 'expected non-empty string')
+  if (s.healthCommand !== undefined && (typeof s.healthCommand !== 'string' || !s.healthCommand.trim())) {
+    throw new ConfigError(`services.${name}.healthCommand`, 'expected non-empty string when set')
+  }
   if (typeof s.healthTimeoutMs !== 'number' || s.healthTimeoutMs <= 0) {
     throw new ConfigError(`services.${name}.healthTimeoutMs`, 'expected positive number')
   }

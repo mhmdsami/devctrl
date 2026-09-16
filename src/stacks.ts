@@ -22,6 +22,7 @@ export interface TStackPlan {
   cmd: string
   env: Record<string, string>
   healthTimeoutMs: number
+  healthCommand?: string
 }
 
 export type TTarget = { kind: 'local'; name: string } | { kind: 'remote'; mode: 'test' | 'prod' }
@@ -173,5 +174,12 @@ export function planStack(
     }
   }
 
-  return { path: wt.path, port: wt.port, cmd: interpolate(svc.command, vars), env, healthTimeoutMs: svc.healthTimeoutMs }
+  return {
+    path: wt.path,
+    port: wt.port,
+    cmd: interpolate(svc.command, vars),
+    env,
+    healthTimeoutMs: svc.healthTimeoutMs,
+    healthCommand: svc.healthCommand,
+  }
 }

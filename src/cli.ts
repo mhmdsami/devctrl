@@ -15,6 +15,7 @@ import { alias as portlessAlias, dnsName as portlessDnsName, portlessAvailable, 
 import { sleep, colors, setQuiet, out, quiet, setColorEnabled } from './util'
 import { parseArgs, flag, opt, positional, type TArgs, UsageError } from './args'
 import { tailFile } from './logtail'
+import { execFile } from 'child_process'
 import { debugFailure, runDiagnosis } from './debugAgent'
 import fs from 'fs'
 import path from 'path'
@@ -231,16 +232,26 @@ function trackedTabWorkspace(state: TDevctlState, key: string): string | undefin
   return state.stacks[key]?.ref.workspaceId
 }
 
+function runHealthCommand(command: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    execFile('bash', ['-c', command], { timeout: 15_000 }, (error) => resolve(!error))
+  })
+}
+
+function healthy(plan: TStackPlan): Promise<boolean> {
+  return plan.healthCommand ? runHealthCommand(plan.healthCommand) : tcpAlive(plan.port)
+}
+
 async function waitFor(key: string, plan: TStackPlan, ref: TStackState['ref'], launcherExits: boolean): Promise<boolean> {
   if (!quiet()) process.stdout.write(`… ${key} starting on ${plan.port} `)
   const deadline = Date.now() + plan.healthTimeoutMs
   while (Date.now() < deadline) {
-    if (await tcpAlive(plan.port)) {
+    if (await healthy(plan)) {
       out(colors.green(`ready http://localhost:${plan.port}`))
       return true
     }
     if (!launcherExits && refExited(ref)) {
-      console.log(colors.red(`FAILED - process exited before listening on ${plan.port}`))
+      console.log(colors.red(`FAILED - process exited before passing health check on ${plan.port}`))
       console.log(colors.dim(`--- output (${key}) ---`))
       console.log(refOutput(ref))
       process.exitCode = 1
