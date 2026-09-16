@@ -166,6 +166,17 @@ or import the folder.
   `cmd+e` edit, `cmd+d` delete, `cmd+f` focus, `cmd+c` agent context
 - **Switch Env**: test / prod (defaults to test)
 
+## Releasing the extension
+
+Publishing is deliberate: the CLI work ships from this repo, and the Raycast extension only
+goes to the store when you tag a release.
+
+1. Bump `version` in `raycast/package.json` and add a `raycast/CHANGELOG.md` entry in a normal
+   commit. The workflow refuses to release a version that already has a tag.
+2. GitHub → Actions → "Release Raycast Extension" → Run workflow (optional release notes).
+3. That publishes to the team store, pushes the `vX.Y.Z` tag, and opens a GitHub release with
+   your notes. No bot commits are added to history.
+
 ## State
 
 `~/.devctl/state.json` - running services, env, stack defs, per-service targets.
