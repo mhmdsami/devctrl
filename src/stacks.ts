@@ -3,7 +3,18 @@ import path from 'path'
 import { parseEnvFile, seedEnvFiles, writeEnvOverlay } from './envfile'
 import { interpolate, loadConfig, repoDir, type TDevctlConfig, type TServiceConfig } from './config'
 import { isShared, listWorktrees, type TRepoKey, type TWorktree } from './registry'
+import { dnsName as portlessDnsName } from './portless'
 import type { TDevctlState, TStackDef } from './state'
+
+function templateVars(repo: TRepoKey, wt: TWorktree): Record<string, string | number> {
+  const name = portlessDnsName(repo, wt)
+  return {
+    port: wt.port,
+    inspectPort: wt.inspectPort ?? '',
+    dnsName: name,
+    portlessUrl: `https://${name}.localhost`,
+  }
+}
 
 export interface TStackPlan {
   path: string
@@ -108,7 +119,7 @@ export function resolveWiring(
     const wt = listWorktrees(provider).find((w) => w.name === target.name)
     if (!wt) throw new Error(`No ${provider} worktree for "${target.name}"`)
     const template = serviceOf(provider).provides?.[value]
-    values[envKey] = template ? interpolate(template, { port: wt.port, inspectPort: wt.inspectPort ?? '' }) : null
+    values[envKey] = template ? interpolate(template, templateVars(provider, wt)) : null
   }
   return values
 }
@@ -142,7 +153,7 @@ export function planStack(
 
   if (!svc.shared) seedEnvFiles(wt.path, repoDir(repo))
 
-  const vars = { port: wt.port, inspectPort: wt.inspectPort }
+  const vars = templateVars(repo, wt)
   const env: Record<string, string> = {}
   for (const [key, value] of Object.entries(svc.env ?? {})) env[key] = interpolate(value, vars)
 

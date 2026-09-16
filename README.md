@@ -55,7 +55,8 @@ worktrees never moves an existing one's port. Named URLs follow:
 `devctl.config.json` (copy `devctl.config.example.jsonc` to start). There are no hardcoded
 roles - services form a **dependency graph**:
 
-- `provides` - values a service exposes when it runs locally (templates with `${port}`/`${inspectPort}`)
+- `provides` - values a service exposes when it runs locally (templates with `${port}`, `${inspectPort}`,
+  `${dnsName}`, `${portlessUrl}`)
 - `remoteProvides` - where those values come from when dependents target `test`/`prod` (read from a service's env base file)
 - `wiring` - `"ENV_KEY": "<service>.<value>"` - injects a provided value into the consumer's env; each entry is a graph edge
 - `dependsOn` - extra edges without env wiring (startup order only)
@@ -109,7 +110,7 @@ one `wiring` line. Cycles are rejected at config load.
       "repo": "my-api",                  // dir under reposRoot
       "basePort": 5000,                  // per-worktree: +10, +11 …
       "command": "./node_modules/.bin/mydev -p ${port}",
-      "env": { "MY_FLAG": "1" },         // ${port}/${inspectPort} interpolated
+      "env": { "MY_FLAG": "1" },         // ${port}/${inspectPort}/${dnsName}/${portlessUrl} interpolated
       "healthTimeoutMs": 120000,
       "install": "pnpm install",         // optional; auto-detected from the lockfile otherwise
       "dependsOn": ["mongo", "redis"],   // exactly the shared services this one needs
@@ -143,6 +144,9 @@ one `wiring` line. Cycles are rejected at config load.
   running and failed services
 - `devctl use <service> <target>` retargets every service that depends on it; stack
   member overrides still win
+- `${dnsName}` is the service's portless name (`<branch>.<service>`), so services that publish
+  their own URL (`PAYLOAD_PUBLIC_SERVER_URL: "https://${dnsName}.localhost"`) stay same-origin
+  when you browse them through portless - no CORS
 
 ## Raycast extension
 
