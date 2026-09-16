@@ -71,6 +71,19 @@ export function killTree(pid: number, startToken?: string): boolean {
   return !processMatches(pid, startToken)
 }
 
+export function pidCwd(pid: number): string | null {
+  try {
+    const out = execFileSync('lsof', ['-a', '-p', String(pid), '-d', 'cwd', '-Fn'], {
+      encoding: 'utf8',
+      timeout: 3_000,
+    })
+    const line = out.split('\n').find((l) => l.startsWith('n/'))
+    return line ? line.slice(1) : null
+  } catch {
+    return null
+  }
+}
+
 export function pidsListeningOnPort(port: number): number[] {
   try {
     const out = execFileSync('lsof', ['-nP', `-iTCP:${port}`, '-sTCP:LISTEN', '-t'], { encoding: 'utf8' })

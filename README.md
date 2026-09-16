@@ -179,5 +179,10 @@ goes to the store when you tag a release.
 
 ## State
 
-`~/.devctl/state.json` - running services, env, stack defs, per-service targets.
-Safe to delete.
+`~/.devctl/state.json` - running services, env, stack defs, per-service targets,
+worktree port slots. Safe to delete.
+
+If a service's process outlives its state entry (for example the terminal manager
+restarted and the entry was cleaned up), the next `up` adopts the process back - it is
+recognised by its worktree path and recorded with its pid and start token, so ownership
+and stopping keep working.

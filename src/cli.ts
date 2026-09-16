@@ -3,7 +3,7 @@ const pathEntries = (process.env.PATH ?? '').split(':').filter(Boolean)
 process.env.PATH = [...PATH_DIRS, ...pathEntries.filter((d) => !PATH_DIRS.includes(d))].join(':')
 
 import { closeWorkspaceByLabel, findRefByLabel, focusTab, focusWorkspace, refAlive, refExited, refOutput, requireRunner, rerunIn, start, stopRef, sweepDevctlTabs } from './session'
-import { killTree, pidsListeningOnPort, tcpAlive } from './process'
+import { killTree, pidCwd, pidsListeningOnPort, processStartToken, tcpAlive } from './process'
 import { loadConfig, repoDir, resolveConfigPath } from './config'
 import { validateConfig } from './validate'
 import { createWorktree, isShared, repoKeys as repoKeysFromRegistry, entryKey, findWorktree, listAllWorktrees, listWorktrees, parseTarget, resolveCwdTarget, type TRepoKey } from './registry'
@@ -206,6 +206,26 @@ async function ensureStack(
 
   if (!shared) {
     const occupants = pidsListeningOnPort(plan.port)
+    const adoptable = occupants.filter((pid) => pidCwd(pid) === plan.path)
+    if (occupants.length > 0 && adoptable.length === occupants.length) {
+      const pid = adoptable[0]
+      out(colors.yellow(`~ ${key}: adopting process ${pid} on port ${plan.port} (left running by an earlier devctl run)`))
+      const ref: TStackState['ref'] = {
+        pid,
+        startToken: processStartToken(pid) ?? undefined,
+        logFile: `${process.env.HOME ?? ''}/.devctl/logs/${key.replace(/\//g, '__')}.log`,
+        port: plan.port,
+      }
+      recordStack(ref)
+      if (await waitFor(key, plan, ref, false)) {
+        summary.reused.push(key)
+        return
+      }
+      out(colors.yellow(`~ ${key}: adopted process is not healthy - restarting`))
+      killTree(pid)
+      delete state.stacks[key]
+      saveState(state)
+    }
     if (occupants.length > 0 && !force) {
       throw new Error(`port ${plan.port} is occupied by pid ${occupants.join(', ')}; stop it or re-run with --force`)
     }
@@ -218,6 +238,14 @@ async function ensureStack(
   const ref = start(key, plan.path, plan.env, plan.cmd, plan.port, undefined, { detached: shared })
   recordStack(ref)
   const ok = await waitFor(key, plan, ref, shared)
+  if (ok && !ref.pid) {
+    const pid = pidsListeningOnPort(plan.port)[0]
+    if (pid) {
+      ref.pid = pid
+      ref.startToken = processStartToken(pid) ?? undefined
+      saveState(state)
+    }
+  }
   if (!ok) {
     summary.failed.push(key)
     cleanupFailedEntry(state, key, ref)
