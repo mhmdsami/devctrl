@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.5 - 2026-09-16
+
+Keeps the store in step with devctl 1.0.5: worktree ports are now pinned (no drift when new
+worktrees appear), services can health-check for real readiness, orphaned services are adopted
+back instead of blocking a start, and env templates gained `${dnsName}`/`${portlessUrl}`.
+
 ## 1.0.4 - 2026-09-15
 
 Guard async callbacks so unloading the extension worker cannot surface Worker unloaded errors.
