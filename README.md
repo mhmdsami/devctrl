@@ -168,14 +168,17 @@ or import the folder.
 
 ## Releasing the extension
 
-Publishing is deliberate: the CLI work ships from this repo, and the Raycast extension only
-goes to the store when you tag a release.
+Releases leave no trace in git history: no bump commit, no changelog commit. The version and
+notes are inputs to the workflow, and the tag records the release.
 
-1. Bump `version` in `raycast/package.json` and add a `raycast/CHANGELOG.md` entry in a normal
-   commit. The workflow refuses to release a version that already has a tag.
-2. GitHub → Actions → "Release Raycast Extension" → Run workflow (optional release notes).
-3. That publishes to the team store, pushes the `vX.Y.Z` tag, and opens a GitHub release with
-   your notes. No bot commits are added to history.
+1. GitHub -> Actions -> "Release Raycast Extension" -> Run workflow
+2. Enter the version (e.g. `1.0.6`) and release notes
+3. The workflow writes the version into `raycast/package.json` inside the runner only, publishes
+   to the team store, pushes the `vX.Y.Z` tag, and opens a GitHub release with your notes
+
+`raycast/package.json` keeps `0.0.0-semantically-released` as its committed version, marking that
+releases own the version. The released version lives in the tag, the GitHub release, and the store.
+The workflow refuses a version that is already tagged.
 
 ## State
 

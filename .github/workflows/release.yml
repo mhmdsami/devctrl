@@ -3,8 +3,11 @@ name: Release Raycast Extension
 on:
   workflow_dispatch:
     inputs:
+      version:
+        description: "Version to publish (e.g. 1.0.6). Not committed - the tag records it."
+        required: true
       notes:
-        description: "Release notes (changelog for this version)"
+        description: "Release notes (become the changelog)"
         required: false
         default: "Bug fixes and improvements"
 
@@ -15,15 +18,25 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
-      - name: Read and check version
+      - name: Set and check version
         run: |
-          VERSION=$(node -p "require('./raycast/package.json').version")
-          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          VERSION="${{ inputs.version }}"
+          echo "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' || { echo "::error::$VERSION is not a semver version"; exit 1; }
           if git ls-remote --exit-code --tags origin "v$VERSION" >/dev/null 2>&1; then
-            echo "::error::tag v$VERSION already exists - bump raycast/package.json first"
+            echo "::error::tag v$VERSION already exists"
             exit 1
           fi
-          echo "releasing v$VERSION"
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          node -e '
+            const fs = require("fs");
+            const file = "raycast/package.json";
+            const pkg = JSON.parse(fs.readFileSync(file, "utf8"));
+            pkg.version = process.env.VERSION;
+            fs.writeFileSync(file, JSON.stringify(pkg, null, 2) + "\n");
+          '
+          echo "publishing v$VERSION"
+        env:
+          VERSION: ${{ inputs.version }}
       - uses: raycast/github-actions/setup-cli@v1.18.0
         with:
           version: 1.104.6
