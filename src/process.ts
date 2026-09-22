@@ -71,6 +71,24 @@ export function killTree(pid: number, startToken?: string): boolean {
   return !processMatches(pid, startToken)
 }
 
+let cachedShellPath: string | undefined | null = null
+
+export function loginShellPath(): string | undefined {
+  if (cachedShellPath !== null) return cachedShellPath
+  try {
+    const shell = process.env.SHELL ?? '/bin/zsh'
+    cachedShellPath = execFileSync(shell, ['-lic', 'printenv PATH'], { encoding: 'utf8', timeout: 5_000 }).trim() || undefined
+  } catch {
+    cachedShellPath = undefined
+  }
+  return cachedShellPath
+}
+
+export function commandEnv(): NodeJS.ProcessEnv {
+  const path = loginShellPath()
+  return path ? { ...process.env, PATH: path } : { ...process.env }
+}
+
 export function pidCwd(pid: number): string | null {
   try {
     const out = execFileSync('lsof', ['-a', '-p', String(pid), '-d', 'cwd', '-Fn'], {

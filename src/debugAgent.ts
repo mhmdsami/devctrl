@@ -1,6 +1,6 @@
 import { execFileSync, spawn } from 'child_process'
 import { loadConfig } from './config'
-import { shQuote } from './process'
+import { commandEnv, shQuote } from './process'
 import { colors, quiet } from './util'
 
 const DEFAULT_PROVIDER = 'opencode-go'
@@ -26,15 +26,6 @@ const runExclusive = (() => {
   }
 })()
 
-function userPath(): string | undefined {
-  try {
-    const shell = process.env.SHELL ?? '/bin/zsh'
-    return execFileSync(shell, ['-lic', 'printenv PATH'], { encoding: 'utf8', timeout: 5_000 }).trim() || undefined
-  } catch {
-    return undefined
-  }
-}
-
 function buildPrompt(info: TDebugInfo): string {
   const tail = info.output.trim()
   const output = tail.length > 8_000 ? `…\n${tail.slice(tail.length - 8_000)}` : tail
@@ -54,9 +45,7 @@ function buildPrompt(info: TDebugInfo): string {
 
 function spawnAgent(info: TDebugInfo, command: string, stream: boolean): Promise<string> {
   const bin = command.split(/\s+/)[0]
-  const env = { ...process.env }
-  const path = userPath()
-  if (path) env.PATH = path
+  const env = commandEnv()
   try {
     execFileSync('which', [bin], { stdio: 'ignore', timeout: 2_000, env })
   } catch {

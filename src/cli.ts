@@ -3,7 +3,7 @@ const pathEntries = (process.env.PATH ?? '').split(':').filter(Boolean)
 process.env.PATH = [...PATH_DIRS, ...pathEntries.filter((d) => !PATH_DIRS.includes(d))].join(':')
 
 import { closeWorkspaceByLabel, findRefByLabel, focusTab, focusWorkspace, refAlive, refExited, refOutput, requireRunner, rerunIn, start, stopRef, sweepDevctlTabs } from './session'
-import { killTree, pidCwd, pidsListeningOnPort, processStartToken, tcpAlive } from './process'
+import { commandEnv, killTree, pidCwd, pidsListeningOnPort, processStartToken, tcpAlive } from './process'
 import { loadConfig, repoDir, resolveConfigPath } from './config'
 import { validateConfig } from './validate'
 import { createWorktree, isShared, repoKeys as repoKeysFromRegistry, entryKey, findWorktree, listAllWorktrees, listWorktrees, parseTarget, resolveCwdTarget, type TRepoKey } from './registry'
@@ -86,7 +86,7 @@ function ensureDeps(key: string, repo: TRepoKey, wt: { path: string }): void {
   const cmd = loadConfig().services[repo]?.install ?? detectInstall(wt.path)
   if (!cmd) return
   out(colors.yellow(`~ ${key}: node_modules missing - running ${cmd}`))
-  execFileSync('bash', ['-c', cmd], { cwd: wt.path, stdio: 'inherit', timeout: 10 * 60_000 })
+  execFileSync('bash', ['-c', cmd], { cwd: wt.path, env: commandEnv(), stdio: 'inherit', timeout: 10 * 60_000 })
 }
 
 async function ensureStack(
@@ -262,7 +262,7 @@ function trackedTabWorkspace(state: TDevctlState, key: string): string | undefin
 
 function runHealthCommand(command: string): Promise<boolean> {
   return new Promise((resolve) => {
-    execFile('bash', ['-c', command], { timeout: 15_000 }, (error) => resolve(!error))
+    execFile('bash', ['-c', command], { timeout: 15_000, env: commandEnv() }, (error) => resolve(!error))
   })
 }
 
@@ -549,7 +549,7 @@ function emitMutationResult(json: boolean, result: Record<string, unknown>): voi
 function runStopCommand(repo: TRepoKey): void {
   const svc = loadConfig().services[repo]
   if (!svc?.shared || !svc.stopCommand) return
-  execFileSync('bash', ['-c', svc.stopCommand], { cwd: repoDir(repo), stdio: 'ignore' })
+  execFileSync('bash', ['-c', svc.stopCommand], { cwd: repoDir(repo), env: commandEnv(), stdio: 'ignore' })
 }
 
 function stopRunningEntry(state: TDevctlState, key: string, force: boolean): void {

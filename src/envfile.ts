@@ -42,8 +42,8 @@ function rootIgnoredFiles(repoPath: string): string[] {
   try {
     const out = execFileSync(
       'git',
-      ['-C', repoPath, 'ls-files', '--others', '--ignored', '--exclude-standard', '--full-name'],
-      { encoding: 'utf8' },
+      ['-C', repoPath, 'ls-files', '--others', '--ignored', '--exclude-standard', '--directory', '--full-name'],
+      { encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 },
     )
     return out.split('\n').filter((line) => line && !line.includes('/'))
   } catch {
@@ -58,7 +58,7 @@ export function seedEnvFiles(worktreePath: string, mainRepoPath: string): string
     ...rootIgnoredFiles(mainRepoPath),
   ])
   for (const name of candidates) {
-    if (name.includes('/')) continue
+    if (name.includes('/') || !name.startsWith('.')) continue
     const target = path.join(worktreePath, name)
     if (fs.existsSync(target)) continue
     fs.copyFileSync(path.join(mainRepoPath, name), target)
