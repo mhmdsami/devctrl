@@ -1,4 +1,4 @@
-import { Clipboard, Icon, MenuBarExtra, open, showToast, Toast } from '@raycast/api'
+import { Clipboard, confirmAlert, Icon, MenuBarExtra, open, showToast, Toast } from '@raycast/api'
 import { run, runLongCommand, serviceLogs } from './lib/devctl'
 import { useDevctlStatus } from './lib/useDevctlStatus'
 import { useStacks } from './lib/useStacks'
@@ -109,6 +109,18 @@ export default function Menubar() {
                 } catch (cause) {
                   await toastSafely({ style: Toast.Style.Failure, title: 'Unable to copy agent context', message: cause instanceof Error ? cause.message : String(cause) })
                 }
+              }}
+            />
+            <MenuBarExtra.Item
+              icon={Icon.Trash}
+              title="Delete Stack"
+              onAction={async () => {
+                const confirmed = await confirmAlert({
+                  title: `Delete ${row.title}?`,
+                  message: 'Stops the stack, removes it from devctl, and deletes its worktrees. Branches are kept.',
+                  icon: Icon.Trash,
+                })
+                if (confirmed) await withToast(`Deleting ${row.title}`, ['stack', 'delete', row.id, '--yes'], reload)
               }}
             />
           </MenuBarExtra.Submenu>
