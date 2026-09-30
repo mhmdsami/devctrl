@@ -227,6 +227,17 @@ export function createWorktree(repo: TRepoKey, branch: string): TWorktree {
   return listWorktrees(repo).find((t) => t.branch === branch || t.name === dirName)!
 }
 
+export function removeWorktree(repo: TRepoKey, name: string, force = false): void {
+  if (cfgForRepo(repo).shared) throw new Error(`"${repo}" is a shared service - it has no worktrees`)
+  if (name === 'head') throw new Error(`refusing to remove "head" - that is the ${repo} checkout itself`)
+  const wt = listWorktrees(repo).find((t) => t.name === name)
+  if (!wt) return
+  git(repoDir(repo), ['worktree', 'remove', ...(force ? ['--force'] : []), wt.path])
+  try {
+    git(repoDir(repo), ['worktree', 'prune'])
+  } catch {}
+}
+
 export function parseTarget(arg: string): { repo: TRepoKey; worktree: TWorktree } {
   const parts = arg.split('/')
   const [repo, name, ...extra] = parts

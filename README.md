@@ -19,6 +19,7 @@ devctl status [--json] [--check]
 devctl which [--json]
 devctl env test|prod [--force] [--json]
 devctl use <service> <worktree|test|prod> [--force] [--json]
+devctl stack delete <name> [--keep-worktrees]  # stops members and removes their worktrees (branches kept)
 devctl logs <service>/<worktree> [--lines N] [--follow]
 devctl config show [--json]              # resolved config, secrets redacted
 devctl config get <path>                 # read one value, e.g. debug.model

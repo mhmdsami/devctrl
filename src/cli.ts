@@ -6,7 +6,7 @@ import { closeWorkspaceByLabel, findRefByLabel, focusTab, focusWorkspace, refAli
 import { commandEnv, killTree, pidCwd, pidsListeningOnPort, processStartToken, tcpAlive } from './process'
 import { loadConfig, repoDir, resolveConfigPath } from './config'
 import { validateConfig } from './validate'
-import { createWorktree, isShared, repoKeys as repoKeysFromRegistry, entryKey, findWorktree, listAllWorktrees, listWorktrees, parseTarget, resolveCwdTarget, type TRepoKey } from './registry'
+import { createWorktree, isShared, removeWorktree, repoKeys as repoKeysFromRegistry, entryKey, findWorktree, listAllWorktrees, listWorktrees, parseTarget, resolveCwdTarget, type TRepoKey } from './registry'
 import { seedEnvFiles } from './envfile'
 import { loadState, saveState, STATE_FILE, type TStackState, type TDevctlState } from './state'
 import { depsOf, dependentsOf, hasWiring, planStack, providersOf, type TStackPlan } from './stacks'
@@ -1141,24 +1141,49 @@ async function cmdStack(rawArgs: string[]): Promise<void> {
   }
 
   if (sub === 'delete') {
-    const a = parseArgs(rawArgs.slice(1), { boolean: ['yes', 'force'] }, 'stack delete')
+    const a = parseArgs(rawArgs.slice(1), { boolean: ['yes', 'force', 'keep-worktrees'] }, 'stack delete')
     const name = a.positionals[0]
-    if (!name || a.positionals.length > 1) throw new UsageError('usage: devctl stack delete <name> [--yes] [--force]')
+    if (!name || a.positionals.length > 1) {
+      throw new UsageError('usage: devctl stack delete <name> [--yes] [--force] [--keep-worktrees]')
+    }
     const def = state.stackDefs[name]
     if (!def) {
       throw new UsageError(`"${name}" is not a pinned stack - discovered stacks derive from worktrees and cannot be deleted`)
     }
-    await confirmAction(a, `delete stack "${name}" (${stackSummary(def)})? Running members will be stopped; worktrees untouched`)
-    for (const repo of repoKeysFromRegistry()) {
-      const service = def.services[repo]
-      if (service && service !== 'test' && service !== 'prod') {
-        stopRunningEntry(state, `${repo}/${service}`, flag(a, 'force'))
-      }
+    const keepWorktrees = flag(a, 'keep-worktrees')
+    const force = flag(a, 'force')
+    const members = repoKeysFromRegistry()
+      .map((repo) => ({ repo, service: def.services[repo] }))
+      .filter((m): m is { repo: TRepoKey; service: string } => Boolean(m.service && m.service !== 'test' && m.service !== 'prod' && !isShared(m.repo)))
+    const removable = members.filter((m) => m.service !== 'head')
+    await confirmAction(
+      a,
+      keepWorktrees
+        ? `delete stack "${name}" (${stackSummary(def)})? Running members will be stopped; worktrees untouched`
+        : `delete stack "${name}" (${stackSummary(def)})? Running members are stopped and their worktrees are removed: ${removable.map((m) => `${m.repo}/${m.service}`).join(', ') || '(none)'}. Branches are kept`,
+    )
+    for (const m of members) {
+      if (state.stacks[`${m.repo}/${m.service}`]) stopRunningEntry(state, `${m.repo}/${m.service}`, force)
     }
     closeWorkspaceByLabel(name)
     delete state.stackDefs[name]
     saveState(state)
-    out(`stack ${name} deleted (worktrees untouched)`)
+    if (keepWorktrees) {
+      out(`stack ${name} deleted (worktrees untouched)`)
+      return
+    }
+    for (const m of removable) {
+      try {
+        removeWorktree(m.repo, m.service, force)
+        out(colors.green(`■ removed worktree ${m.repo}/${m.service}`))
+      } catch (err) {
+        console.error(
+          colors.red(`devctl: could not remove ${m.repo}/${m.service}: ${err instanceof Error ? err.message : String(err)}`),
+        )
+        process.exitCode = 1
+      }
+    }
+    out(`stack ${name} deleted`)
     return
   }
 
@@ -1188,7 +1213,8 @@ const GLOBAL_USAGE = `usage: devctl <command>
   stack add <name> <repo> <branch|test|prod|none>
   stack create <name> [--label <text>] [--<service> <branch|test|prod|none> ...] [--yes]
                                  create worktrees as needed and pin the stack; replacing one asks for confirmation
-  stack delete <name> [--yes] [--force]      remove a pinned stack (worktrees untouched)
+  stack delete <name> [--yes] [--force] [--keep-worktrees]
+                                 remove a pinned stack, its worktrees (branches are kept)
   logs <repo/branch> [--lines N] [--follow]
   diagnose <service>/<worktree> [--json]
                                  hand a service's recent logs to the debug agent for a root cause
@@ -1263,8 +1289,9 @@ const HELP: Record<string, string> = {
   down <name>        stop a stack's members
   add <name> <repo> <branch|test|prod|none>     pin/override a stack service
   create <name> [--label <text>] [--<service> <branch|test|prod|none> ...] [--yes]
-  delete <name> [--yes] [--force]
-  current [name]     get/set the current stack`,
+  delete <name> [--yes] [--force] [--keep-worktrees]
+                     remove a pinned stack; stops members and removes their worktrees
+                     (branches are kept). --keep-worktrees leaves the worktrees in place`,
 }
 
 async function runCommand(rawArgv: string[]): Promise<void> {
