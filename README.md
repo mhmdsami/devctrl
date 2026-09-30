@@ -17,7 +17,10 @@ devctl kill [--yes] [--force] [--json]   # kill switch: everything, with confirm
 devctl restart <stack | <service>/<worktree>> [--force]
 devctl status [--json] [--check]
 devctl which [--json]
-devctl env test|prod [--force] [--json]
+devctl env test|prod [--force] [--json]  # switch external API mode
+devctl env show <service>[/<worktree>] [--stack <name>]   # effective env, with provenance
+devctl env set|unset <service> KEY[=VALUE] [--stack <name>]   # stack override, layered last
+devctl env edit <service> [--stack <name>]
 devctl use <service> <worktree|test|prod> [--force] [--json]
 devctl stack delete <name> [--keep-worktrees]  # stops members and removes their worktrees (branches kept)
 devctl logs <service>/<worktree> [--lines N] [--follow]
@@ -145,6 +148,10 @@ one `wiring` line. Cycles are rejected at config load.
   running and failed services
 - `devctl use <service> <target>` retargets every service that depends on it; stack
   member overrides still win
+- per-service env is layered: the mode base file (`.env.test`), then `services.<x>.env`, then
+  `envExternals.<mode>`, then `wiring` (via `.env.local`), then the stack override file
+  `~/.devctl/env/<stack>/<service>.env`. `devctl env show <service>[/<worktree>]` prints the
+  result with the source of every key; `devctl env set|unset|edit` maintain the override file
 - `${dnsName}` is the service's portless name (`<branch>.<service>`), so services that publish
   their own URL (`PAYLOAD_PUBLIC_SERVER_URL: "https://${dnsName}.localhost"`) stay same-origin
   when you browse them through portless - no CORS

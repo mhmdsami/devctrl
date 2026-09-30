@@ -4,6 +4,7 @@ import { parseEnvFile, seedEnvFiles, writeEnvOverlay } from './envfile'
 import { interpolate, loadConfig, repoDir, type TDevctlConfig, type TServiceConfig } from './config'
 import { isShared, listWorktrees, type TRepoKey, type TWorktree } from './registry'
 import { dnsName as portlessDnsName } from './portless'
+import { readOverrides } from './envOverrides'
 import type { TDevctlState, TStackDef } from './state'
 
 function templateVars(repo: TRepoKey, wt: TWorktree): Record<string, string | number> {
@@ -149,31 +150,10 @@ export function planStack(
   state: Pick<TDevctlState, 'env' | 'targets'>,
   stackDef?: TStackDef,
 ): TStackPlan {
-  const cfg = loadConfig()
   const svc = serviceOf(repo)
-
   if (!svc.shared) seedEnvFiles(wt.path, repoDir(repo))
-
   const vars = templateVars(repo, wt)
-  const env: Record<string, string> = {}
-  for (const [key, value] of Object.entries(svc.env ?? {})) env[key] = interpolate(value, vars)
-
-  const externals = svc.envExternals?.[state.env]
-  if (externals) Object.assign(env, externals)
-
-  const wiring = svc.wiring ?? {}
-  if (!svc.shared && Object.keys(wiring).length > 0) {
-    const values = resolveWiring(state, repo, stackDef)
-    const overrides: Record<string, string> = {}
-    for (const [key, value] of Object.entries(values)) {
-      if (value !== null) overrides[key] = value
-    }
-    const merged = writeEnvOverlay(wt.path, cfg.envBaseFiles[state.env], overrides)
-    for (const key of svc.overlayManagedKeys ?? []) {
-      if (merged[key]) env[key] = merged[key]
-    }
-  }
-
+  const { env } = resolveEnv(repo, wt, state, stackDef, { write: true })
   return {
     path: wt.path,
     port: wt.port,
@@ -182,4 +162,79 @@ export function planStack(
     healthTimeoutMs: svc.healthTimeoutMs,
     healthCommand: svc.healthCommand,
   }
+}
+
+export interface TEnvSource {
+  value: string
+  source: string
+}
+
+export interface TEnvResolution {
+  env: Record<string, string>
+  display: Record<string, TEnvSource>
+}
+
+export function resolveEnv(
+  repo: TRepoKey,
+  wt: TWorktree,
+  state: Pick<TDevctlState, 'env' | 'targets'>,
+  stackDef?: TStackDef,
+  opts: { write?: boolean } = {},
+): TEnvResolution {
+  const cfg = loadConfig()
+  const svc = serviceOf(repo)
+  const vars = templateVars(repo, wt)
+  const baseFile = cfg.envBaseFiles[state.env]
+  const basePath = path.join(wt.path, baseFile)
+  const base: Record<string, string> = !svc.shared && fs.existsSync(basePath) ? parseEnvFile(fs.readFileSync(basePath, 'utf8')) : {}
+
+  const display: Record<string, TEnvSource> = {}
+  for (const [key, value] of Object.entries(base)) display[key] = { value, source: `base ${baseFile}` }
+
+  const env: Record<string, string> = {}
+  for (const [key, value] of Object.entries(svc.env ?? {})) {
+    const resolved = interpolate(value, vars)
+    env[key] = resolved
+    display[key] = { value: resolved, source: `services.${repo}.env` }
+  }
+
+  const externals = svc.envExternals?.[state.env]
+  if (externals) {
+    for (const [key, value] of Object.entries(externals)) {
+      env[key] = value
+      display[key] = { value, source: `envExternals.${state.env}` }
+    }
+  }
+
+  const wiring = svc.wiring ?? {}
+  if (!svc.shared && Object.keys(wiring).length > 0) {
+    const values = resolveWiring(state, repo, stackDef)
+    const overrides: Record<string, string> = {}
+    for (const [key, value] of Object.entries(values)) {
+      if (value !== null) overrides[key] = value
+      display[key] = { value: value ?? '', source: `wiring ${wiring[key] ?? ''}` }
+    }
+    const merged = { ...base, ...overrides }
+    if (opts.write) writeEnvOverlay(wt.path, baseFile, overrides)
+    for (const [key, value] of Object.entries(merged)) {
+      const current = display[key]
+      if (!current || current.source.startsWith('base')) {
+        display[key] = { value, source: `overlay .env.local (${wiring[key] ? `wiring ${wiring[key]}` : 'base'})` }
+      }
+    }
+    for (const key of svc.overlayManagedKeys ?? []) {
+      if (merged[key] !== undefined) {
+        env[key] = merged[key]
+        display[key] = { value: merged[key], source: `overlay .env.local (${wiring[key] ? `wiring ${wiring[key]}` : 'base'})` }
+      }
+    }
+  }
+
+  const overrides = readOverrides(stackDef?.name, repo)
+  for (const [key, value] of Object.entries(overrides)) {
+    env[key] = value
+    display[key] = { value, source: `override ${stackDef?.name}/${repo}.env` }
+  }
+
+  return { env, display }
 }

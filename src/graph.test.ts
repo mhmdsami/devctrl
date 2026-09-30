@@ -4,6 +4,8 @@ import fs from 'fs'
 import os from 'os'
 import path from 'path'
 import { assignSlots, createWorktree, removeWorktree, slotPort } from './registry'
+import { setOverride, unsetOverride } from './envOverrides'
+import { resolveEnv } from './stacks'
 
 if (!process.env.DEVCTL_WORKTREES_ROOT) {
   throw new Error('graph.test.ts needs DEVCTL_WORKTREES_ROOT set (use `npm test`)')
@@ -93,6 +95,14 @@ const afterStop = assignSlots(['espeon/head', 'espeon/ft-product-card-carousel',
 assert.strictEqual(afterStop['espeon/ft-product-card-carousel'], 3)
 assert.strictEqual(afterStop['espeon/ho-lfc-qa'], 2)
 
+const apiHead = listWorktrees('api').find((t) => t.name === 'head')!
+setOverride('s', 'api', 'API_URL', 'from-override')
+const resolved = resolveEnv('api', apiHead, { env: 'test', targets: {} }, { name: 's', services: { api: 'head' } })
+assert.strictEqual(resolved.env.API_URL, 'from-override')
+assert.match(resolved.display.API_URL.source, /override s\/api\.env/)
+unsetOverride('s', 'api', 'API_URL')
+assert.strictEqual(resolveEnv('api', apiHead, { env: 'test', targets: {} }, { name: 's', services: { api: 'head' } }).env.API_URL, undefined)
+
 const created = createWorktree('api', 'ft-temp-worktree')
 assert.ok(fs.existsSync(created.path))
 assert.ok(listWorktrees('api').some((t) => t.name === 'ft-temp-worktree'))
@@ -103,4 +113,5 @@ assert.throws(() => removeWorktree('api', 'head'))
 
 fs.rmSync(root, { recursive: true, force: true })
 fs.rmSync(process.env.DEVCTL_WORKTREES_ROOT!, { recursive: true, force: true })
+fs.rmSync(process.env.DEVCTL_DIR!, { recursive: true, force: true })
 console.log('graph self-check passed')

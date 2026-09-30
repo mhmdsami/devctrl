@@ -3,14 +3,15 @@ const pathEntries = (process.env.PATH ?? '').split(':').filter(Boolean)
 process.env.PATH = [...PATH_DIRS, ...pathEntries.filter((d) => !PATH_DIRS.includes(d))].join(':')
 
 import { closeWorkspaceByLabel, findRefByLabel, focusTab, focusWorkspace, refAlive, refExited, refOutput, requireRunner, rerunIn, start, stopRef, sweepDevctlTabs } from './session'
-import { commandEnv, killTree, pidCwd, pidsListeningOnPort, processStartToken, tcpAlive } from './process'
+import { commandEnv, killTree, pidCwd, pidsListeningOnPort, processStartToken, shQuote, tcpAlive } from './process'
 import { loadConfig, repoDir, resolveConfigPath } from './config'
 import { validateConfig } from './validate'
 import { createWorktree, isShared, removeWorktree, repoKeys as repoKeysFromRegistry, entryKey, findWorktree, listAllWorktrees, listWorktrees, parseTarget, resolveCwdTarget, type TRepoKey } from './registry'
 import { seedEnvFiles } from './envfile'
 import { loadState, saveState, STATE_FILE, type TStackState, type TDevctlState } from './state'
-import { depsOf, dependentsOf, hasWiring, planStack, providersOf, type TStackPlan } from './stacks'
-import { resolveStack } from './stackRegistry'
+import { depsOf, dependentsOf, hasWiring, planStack, providersOf, resolveEnv, type TStackPlan } from './stacks'
+import { overrideFile, setOverride, unsetOverride } from './envOverrides'
+import { discoverStacks, resolveStack } from './stackRegistry'
 import { alias as portlessAlias, dnsName as portlessDnsName, portlessAvailable, portlessProxyUp, portlessUrl, removeAlias as portlessRemoveAlias } from './portless'
 import { sleep, colors, setQuiet, out, quiet, setColorEnabled } from './util'
 import { parseArgs, flag, opt, positional, type TArgs, UsageError } from './args'
@@ -594,19 +595,116 @@ function recordOnly(state: TDevctlState, key: string, old: TStackState, ref: TSt
   saveState(state)
 }
 
+function stackForService(a: TArgs, state: TDevctlState, service: string): string {
+  const explicit = opt(a, 'stack')
+  if (explicit) {
+    try {
+      resolveStack(explicit, state.stackDefs)
+    } catch {
+      throw new UsageError(`unknown stack "${explicit}" - see devctl stack ls`)
+    }
+    return explicit
+  }
+  const running = Object.values(state.stacks).find((entry) => entry.repo === service && entry.stack)
+  if (running?.stack) return running.stack
+  const owners = [
+    ...Object.entries(state.stackDefs).filter(([, def]) => def.services[service]).map(([name]) => name),
+    ...discoverStacks().filter((def) => def.services[service]).map((def) => def.name),
+  ]
+  if (owners.length === 1) return owners[0]
+  if (owners.length === 0) throw new UsageError(`no stack defines "${service}" - pass --stack <name>`)
+  throw new UsageError(`"${service}" is in ${owners.join(', ')} - pass --stack <name>`)
+}
+
+function maskEnv(value: string, key: string): string {
+  return SECRET_KEY.test(key) ? '[redacted]' : value
+}
+
+function cmdEnvShow(a: TArgs): void {
+  const target = a.positionals[1]
+  if (!target) throw new UsageError('usage: devctl env show <service>[/<worktree>] [--stack <name>] [--json]')
+  const state = loadState()
+  const t = parseTarget(target)
+  const stack = stackForService(a, state, t.repo)
+  const stackDef = resolveStack(stack, state.stackDefs)
+  const wtName = t.worktree.name === 'head' ? stackDef?.services[t.repo] ?? 'head' : t.worktree.name
+  const wt = findWorktree(t.repo, wtName)
+  const { env, display } = resolveEnv(t.repo, wt, state, stackDef)
+  const file = overrideFile(stack, t.repo)
+  const reveal = flag(a, 'reveal')
+  if (flag(a, 'json')) {
+    const masked = Object.fromEntries(
+      Object.entries(display).map(([key, entry]) => [
+        key,
+        { value: reveal ? entry.value : maskEnv(entry.value, key), source: entry.source },
+      ]),
+    )
+    console.log(JSON.stringify({ service: t.repo, worktree: wt.name, stack, mode: state.env, overrides: file, env: masked }, null, 2))
+    return
+  }
+  out(`${t.repo}/${wt.name}  stack ${stack}  mode ${state.env}`)
+  for (const [key, entry] of Object.entries(display).sort(([a2], [b2]) => a2.localeCompare(b2))) {
+    out(`  ${key}=${reveal ? entry.value : maskEnv(entry.value, key)}  ${colors.dim(`← ${entry.source}`)}`)
+  }
+  out(colors.dim(`  overrides: ${file}${fs.existsSync(file) ? '' : ' (none yet)'}`))
+  out(colors.dim(`  exported into the pane as process env: ${Object.keys(env).length} keys`))
+}
+
+async function cmdEnvOverride(a: TArgs, mode: 'set' | 'unset' | 'edit'): Promise<void> {
+  const service = a.positionals[1]
+  if (!service) throw new UsageError(`usage: devctl env ${mode} <service> ${mode === 'edit' ? '' : mode === 'set' ? 'KEY=VALUE ' : 'KEY '}[--stack <name>]`)
+  const state = loadState()
+  const stack = stackForService(a, state, service)
+
+  if (mode === 'edit') {
+    const file = overrideFile(stack, service)
+    fs.mkdirSync(path.dirname(file), { recursive: true })
+    if (!fs.existsSync(file)) fs.writeFileSync(file, '')
+    const editor = process.env.EDITOR ?? process.env.VISUAL ?? 'open'
+    execFileSync('bash', ['-c', `${editor} ${shQuote(file)}`], { stdio: 'inherit' })
+    out(`edited ${file}`)
+    return
+  }
+
+  const arg = a.positionals[2]
+  if (!arg) throw new UsageError(`usage: devctl env ${mode} <service> ${mode === 'set' ? 'KEY=VALUE' : 'KEY'} [--stack <name>]`)
+
+  if (mode === 'set') {
+    const eq = arg.indexOf('=')
+    if (eq < 1) throw new UsageError('expected KEY=VALUE')
+    const key = arg.slice(0, eq).trim()
+    const value = arg.slice(eq + 1)
+    const file = setOverride(stack, service, key, value)
+    out(`set ${key} for ${stack}/${service} → ${file}`)
+  } else {
+    const removed = unsetOverride(stack, service, arg.trim())
+    out(removed ? `unset ${arg} for ${stack}/${service}` : `${arg} was not set for ${stack}/${service}`)
+  }
+
+  const affected = Object.entries(state.stacks)
+    .filter(([, entry]) => entry.repo === service && entry.stack === stack)
+    .map(([key]) => key)
+  for (const key of affected) {
+    await restartStack(key, state, flag(a, 'force'))
+  }
+  if (affected.length > 0) out(colors.dim(`restarted ${affected.join(', ')}`))
+}
+
 async function cmdEnv(a: TArgs): Promise<void> {
+  const sub = a.positionals[0]
+  if (sub === 'show') return cmdEnvShow(a)
+  if (sub === 'set' || sub === 'unset' || sub === 'edit') return cmdEnvOverride(a, sub)
   const json = flag(a, 'json')
   if (json) setQuiet(true)
-  const mode = a.positionals[0]
-  if (mode !== 'test' && mode !== 'prod') {
-    throw new UsageError('usage: devctl env test|prod [--force] [--json]')
+  if (sub !== 'test' && sub !== 'prod') {
+    throw new UsageError('usage: devctl env test|prod | env show <service>[/<worktree>] | env set|unset|edit <service> [--stack <name>]')
   }
   requireRunner()
   const force = flag(a, 'force')
   const state = loadState()
-  state.env = mode
+  state.env = sub
   saveState(state)
-  out(`env → ${mode}`)
+  out(`env → ${sub}`)
   const restarted: string[] = []
 
   for (const key of Object.keys(state.stacks)) {
@@ -617,7 +715,7 @@ async function cmdEnv(a: TArgs): Promise<void> {
       restarted.push(key)
     }
   }
-  emitMutationResult(json, { ok: process.exitCode !== 1, env: mode, restarted })
+  emitMutationResult(json, { ok: process.exitCode !== 1, env: sub, restarted })
 }
 
 async function cmdUse(a: TArgs): Promise<void> {
@@ -1207,6 +1305,7 @@ const GLOBAL_USAGE = `usage: devctl <command>
   status [--json] [--check]      --check exits 1 when a tracked service is unhealthy
   which [--json]                 every worktree with its assigned port
   env test|prod [--force] [--json]   switch external APIs; restarts wired/external services
+  env show|set|unset|edit ...        inspect a service's effective env, or edit its stack overrides
   use <service> <branch|test|prod> [--force] [--json]
                                  point everything that depends on <service> at a target
   stack ls [--json] | up <name> | down <name>
@@ -1254,8 +1353,15 @@ const HELP: Record<string, string> = {
   --check exits 1 when any tracked service is unhealthy (for scripts/CI)`,
   which: `usage: devctl which [--json]`,
   env: `usage: devctl env test|prod [--force] [--json]
+              devctl env show <service>[/<worktree>] [--stack <name>] [--json] [--reveal]
+              devctl env set|unset <service> KEY[=VALUE] [--stack <name>] [--force]
+              devctl env edit <service> [--stack <name>]
 
-  Switches external API mode and restarts services with wiring or envExternals.`,
+  test|prod switches the external API mode and restarts services with wiring or envExternals.
+  show prints the effective env with the source of every value (base file, services.<x>.env,
+  envExternals, wiring, stack override); secret-looking values are redacted unless --reveal.
+  set/unset/edit maintain ~/.devctl/env/<stack>/<service>.env, which is layered last and
+  applied on start (running members of that stack are restarted).`,
   use: `usage: devctl use <service> <branch|test|prod> [--force] [--json]
 
   Points every service that depends on <service> at the given target.
@@ -1330,7 +1436,7 @@ async function runCommand(rawArgv: string[]): Promise<void> {
     case 'which':
       return cmdWhich(parseArgs(args, { boolean: ['json'] }, 'which'))
     case 'env':
-      return cmdEnv(parseArgs(args, { boolean: ['force', 'json'] }, 'env'))
+      return cmdEnv(parseArgs(args, { string: ['stack'], boolean: ['force', 'json', 'reveal'] }, 'env'))
     case 'use':
       return cmdUse(parseArgs(args, { boolean: ['force', 'json'] }, 'use'))
     case 'stack':

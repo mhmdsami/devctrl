@@ -2,7 +2,7 @@ import fs from 'fs'
 import os from 'os'
 import path from 'path'
 
-export const DEVCTL_DIR = path.join(os.homedir(), '.devctl')
+export const DEVCTL_DIR = process.env.DEVCTL_DIR ?? path.join(os.homedir(), '.devctl')
 export const STATE_FILE = path.join(DEVCTL_DIR, 'state.json')
 export const STATE_VERSION = 2
 

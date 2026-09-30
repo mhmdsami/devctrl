@@ -64,6 +64,7 @@ devctl doctor [--json]    # config, binaries, ports, env files, stale state, bra
 devctl config show        # resolved config, secrets redacted
 devctl context [stack]    # markdown status of a stack - paste into the conversation when the user asks about their stack
 devctl diagnose <service>/<worktree>   # debug agent reads recent logs and prints ROOT CAUSE / FIX
+devctl env show <service>/<worktree>   # effective env with the source of each key (secrets redacted)
 ```
 
 If a service won't start, check `doctor` and that service's logs before guessing. For app-level
